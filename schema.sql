@@ -52,9 +52,28 @@ CREATE POLICY "Allow all for authenticated" ON scores FOR ALL TO authenticated U
 -- Insert initial data
 INSERT INTO extracurriculars (name) VALUES 
 ('Badminton'), 
-('Futsal'), 
+('Band'),
 ('Basket'), 
-('Pramuka');
+('Catur'),
+('Cooking Class'),
+('Desain Animasi'),
+('Dewan Galang'),
+('English Club'),
+('Esport'),
+('Floorball'),
+('Futsal'), 
+('Math Club'),
+('Modern Dance'),
+('Multimedia'),
+('Paduan Suara'),
+('Paskibra'),
+('PMR'), 
+('Pramuka'),
+('Programming'),
+('Renang'),
+('Science Club'),
+('Theater'),
+('Tenis Meja');
 
 -- Function to handle new user profile creation (optional but good practice)
 -- Note: Since we are creating users manually for this simple app, we can just insert into profiles directly.
