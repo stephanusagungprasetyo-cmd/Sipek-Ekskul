@@ -168,8 +168,15 @@ export default function MasterData() {
     s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     s.class_name.toLowerCase().includes(searchTerm.toLowerCase())
   ).sort((a, b) => {
+    // Primary Sort
     if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1
     if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1
+    
+    // Secondary Sort (always by name ASC if sorting by class)
+    if (sortConfig.key === 'class_name') {
+      return a.name.localeCompare(b.name)
+    }
+    
     return 0
   })
 

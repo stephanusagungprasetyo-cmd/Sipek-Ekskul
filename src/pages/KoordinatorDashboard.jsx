@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
-import { Search, Loader2, Download, Printer, Filter, Star, FileSpreadsheet } from 'lucide-react'
+import { Search, Loader2, Download, Printer, Filter, Star, ArrowUpDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function KoordinatorDashboard() {
@@ -10,6 +10,7 @@ export default function KoordinatorDashboard() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedClass, setSelectedClass] = useState('Semua Kelas')
   const [classes, setClasses] = useState([])
+  const [sortConfig, setSortConfig] = useState({ key: 'class_name', direction: 'asc' })
 
   useEffect(() => {
     fetchData()
@@ -26,14 +27,13 @@ export default function KoordinatorDashboard() {
         pilihan2:extracurriculars!pilihan_2_id(id, name),
         scores(*)
       `)
-      .order('class_name', { ascending: true })
 
     if (error) {
       toast.error('Gagal mengambil data rekap')
     } else {
       setData(students || [])
       const uniqueClasses = ['Semua Kelas', ...new Set((students || []).map(s => s.class_name))]
-      setClasses(uniqueClasses)
+      setClasses(uniqueClasses.sort())
     }
     setLoading(false)
   }
@@ -51,9 +51,35 @@ export default function KoordinatorDashboard() {
     return 'C'
   }
 
+  const requestSort = (key) => {
+    let direction = 'asc'
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'
+    setSortConfig({ key, direction })
+  }
+
+  const filteredData = data.filter(student => {
+    const matchSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchClass = selectedClass === 'Semua Kelas' || student.class_name === selectedClass
+    return matchSearch && matchClass
+  }).sort((a, b) => {
+    if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1
+    if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1
+    
+    // Secondary sort by name
+    if (sortConfig.key === 'class_name') {
+      return a.name.localeCompare(b.name)
+    }
+    return 0
+  })
+
   const exportToExcel = () => {
     const reportData = filteredData
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => {
+        // Always sort by class then name for export
+        const classComp = a.class_name.localeCompare(b.class_name)
+        if (classComp !== 0) return classComp
+        return a.name.localeCompare(b.name)
+      })
       .map((s, idx) => ({
         'No': idx + 1,
         'Nama Siswa': s.name,
@@ -73,12 +99,6 @@ export default function KoordinatorDashboard() {
     XLSX.writeFile(wb, fileName)
     toast.success(`Berhasil mengekspor data ${selectedClass}`)
   }
-
-  const filteredData = data.filter(student => {
-    const matchSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchClass = selectedClass === 'Semua Kelas' || student.class_name === selectedClass
-    return matchSearch && matchClass
-  })
 
   return (
     <div className="space-y-8">
@@ -118,20 +138,6 @@ export default function KoordinatorDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="card border-0 bg-indigo-600 text-white shadow-xl shadow-indigo-100">
-          <p className="text-indigo-100 text-[10px] font-bold uppercase tracking-widest">Ekskul Wajib</p>
-          <div className="flex items-end justify-between mt-2">
-            <h3 className="text-3xl font-bold">Pramuka+</h3>
-            <Star className="text-indigo-400 opacity-50" size={24} />
-          </div>
-        </div>
-        <div className="card border-slate-100 bg-white">
-          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Siswa Terfilter</p>
-          <h3 className="text-3xl font-bold text-slate-800 mt-1">{filteredData.length}</h3>
-        </div>
-      </div>
-
       <div className="table-container">
         {loading ? (
           <div className="p-20 text-center text-slate-400 flex flex-col items-center gap-3">
@@ -139,12 +145,16 @@ export default function KoordinatorDashboard() {
             <p>Menyusun laporan...</p>
           </div>
         ) : filteredData.length > 0 ? (
-          <table className="table-modern">
+          <table className="table-modern whitespace-nowrap">
             <thead>
               <tr className="bg-slate-50/50">
                 <th rowSpan="2" className="text-center w-12">No</th>
-                <th rowSpan="2" className="min-w-[200px]">Nama Siswa</th>
-                <th rowSpan="2" className="text-center w-24">Kelas</th>
+                <th rowSpan="2" className="min-w-[200px] cursor-pointer" onClick={() => requestSort('name')}>
+                  <div className="flex items-center gap-2">Nama Siswa <ArrowUpDown size={14} /></div>
+                </th>
+                <th rowSpan="2" className="text-center w-24 cursor-pointer" onClick={() => requestSort('class_name')}>
+                  <div className="flex items-center gap-2">Kelas <ArrowUpDown size={14} /></div>
+                </th>
                 <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-indigo-50/30 text-indigo-700">Ekskul Wajib</th>
                 <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-amber-50/30 text-amber-700">Pilihan 1</th>
                 <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-teal-50/30 text-teal-700">Pilihan 2</th>
@@ -167,7 +177,6 @@ export default function KoordinatorDashboard() {
                     <td className="font-bold text-slate-800">{student.name}</td>
                     <td className="text-center text-slate-500 font-medium">{student.class_name}</td>
                     
-                    {/* Wajib */}
                     <td className="text-[11px] font-semibold text-slate-600">{student.wajib?.name || '-'}</td>
                     <td className="text-center font-black">
                       {getGradeStr(sWajib) !== '-' ? (
@@ -175,7 +184,6 @@ export default function KoordinatorDashboard() {
                       ) : '-'}
                     </td>
                     
-                    {/* P1 */}
                     <td className="text-[11px] font-semibold text-slate-600">{student.pilihan1?.name || '-'}</td>
                     <td className="text-center font-black">
                       {getGradeStr(sP1) !== '-' ? (
@@ -183,7 +191,6 @@ export default function KoordinatorDashboard() {
                       ) : '-'}
                     </td>
                     
-                    {/* P2 */}
                     <td className="text-[11px] font-semibold text-slate-600">{student.pilihan2?.name || '-'}</td>
                     <td className="text-center font-black">
                       {getGradeStr(sP2) !== '-' ? (
