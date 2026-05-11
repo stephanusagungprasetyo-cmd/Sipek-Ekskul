@@ -1,94 +1,80 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { Search, Loader2, Filter, Users } from 'lucide-react'
+import { LayoutDashboard, Users, Clock, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function PendampingDashboard() {
-  const [data, setData] = useState([])
+  const [stats, setStats] = useState([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [ekskulFilter, setEkskulFilter] = useState('All')
-  const [classFilter, setClassFilter] = useState('All')
-  const [ekskuls, setEkskuls] = useState([])
-  const [classes, setClasses] = useState([])
 
   useEffect(() => {
-    fetchData()
+    fetchStats()
   }, [])
 
-  async function fetchData() {
+  async function fetchStats() {
     setLoading(true)
-    const { data: scoresData, error } = await supabase
-      .from('scores')
-      .select('*, students(*), extracurriculars(*)')
-    
-    if (error) {
-      toast.error('Gagal mengambil data')
-    } else {
-      setData(scoresData)
-      
-      // Extract unique ekskuls and classes for filters
-      const uniqueEkskuls = [...new Set(scoresData.map(item => item.extracurriculars?.name))].filter(Boolean)
-      const uniqueClasses = [...new Set(scoresData.map(item => item.students?.class_name))].filter(Boolean).sort()
-      
-      setEkskuls(uniqueEkskuls)
-      setClasses(uniqueClasses)
+    const { data: ekskuls, error: eError } = await supabase.from('extracurriculars').select('*').order('name')
+    const { data: scores, error: sError } = await supabase.from('scores').select('extracurricular_id, average_score, att_1')
+
+    if (eError || sError) {
+      toast.error('Gagal memuat status monitoring')
+      setLoading(false)
+      return
     }
+
+    const calculatedStats = ekskuls.map(ekskul => {
+      const ekskulScores = scores.filter(s => s.extracurricular_id === ekskul.id)
+      const totalStudents = ekskulScores.length
+      const filledScores = ekskulScores.filter(s => s.att_1 || s.average_score > 0).length
+      
+      return {
+        ...ekskul,
+        totalStudents,
+        filledScores,
+        progress: totalStudents > 0 ? (filledScores / totalStudents) * 100 : 0
+      }
+    })
+
+    setStats(calculatedStats)
     setLoading(false)
   }
 
-  const filteredData = data.filter(item => {
-    const matchesSearch = item.students?.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesEkskul = ekskulFilter === 'All' || item.extracurriculars?.name === ekskulFilter
-    const matchesClass = classFilter === 'All' || item.students?.class_name === classFilter
-    return matchesSearch && matchesEkskul && matchesClass
-  })
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Monitoring Nilai Siswa</h2>
-        <p className="text-slate-500 mt-1">Melihat data nilai seluruh siswa ekstrakurikuler.</p>
+        <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Monitoring Pengisian Nilai</h2>
+        <p className="text-slate-500 mt-1">Pantau progres pengisian nilai oleh setiap pelatih ekskul.</p>
       </div>
 
-      <div className="card grid grid-cols-1 md:grid-cols-4 gap-4 p-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input
-            type="text"
-            placeholder="Cari nama..."
-            className="input-field pl-10 text-sm py-2"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="card bg-white border-slate-100 flex items-center gap-5">
+          <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-sm">
+            <Users size={28} />
+          </div>
+          <div>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Total Ekskul</p>
+            <h3 className="text-2xl font-bold text-slate-800">{stats.length}</h3>
+          </div>
         </div>
         
-        <div className="relative">
-          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <select 
-            className="input-field pl-10 text-sm py-2 appearance-none"
-            value={ekskulFilter}
-            onChange={(e) => setEkskulFilter(e.target.value)}
-          >
-            <option value="All">Semua Ekskul</option>
-            {ekskuls.map(e => <option key={e} value={e}>{e}</option>)}
-          </select>
+        <div className="card bg-white border-slate-100 flex items-center gap-5">
+          <div className="w-14 h-14 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center shadow-sm">
+            <CheckCircle2 size={28} />
+          </div>
+          <div>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Selesai</p>
+            <h3 className="text-2xl font-bold text-slate-800">{stats.filter(s => s.progress === 100 && s.totalStudents > 0).length}</h3>
+          </div>
         </div>
 
-        <div className="relative">
-          <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <select 
-            className="input-field pl-10 text-sm py-2 appearance-none"
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-          >
-            <option value="All">Semua Kelas</option>
-            {classes.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        
-        <div className="flex items-center justify-end px-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-          {filteredData.length} Hasil
+        <div className="card bg-white border-slate-100 flex items-center gap-5">
+          <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-sm">
+            <Clock size={28} />
+          </div>
+          <div>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Berjalan</p>
+            <h3 className="text-2xl font-bold text-slate-800">{stats.filter(s => s.progress > 0 && s.progress < 100).length}</h3>
+          </div>
         </div>
       </div>
 
@@ -96,65 +82,57 @@ export default function PendampingDashboard() {
         {loading ? (
           <div className="p-20 text-center text-slate-400 flex flex-col items-center gap-3">
             <Loader2 className="animate-spin" size={32} />
-            <p>Memuat data...</p>
+            <p>Menganalisis progres...</p>
           </div>
-        ) : filteredData.length > 0 ? (
+        ) : (
           <table className="table-modern">
             <thead>
-              <tr>
-                <th className="w-16 text-center">No</th>
-                <th>Nama Siswa</th>
-                <th>Kelas</th>
-                <th>Ekskul</th>
-                <th className="text-center">Kehadiran</th>
-                <th className="text-center">Praktik</th>
-                <th className="text-center">Pengetahuan</th>
-                <th className="text-center">Nilai Akhir</th>
-                <th className="text-center">Huruf</th>
+              <tr className="bg-slate-50/50">
+                <th>Ekstrakurikuler</th>
+                <th className="text-center w-32">Total Siswa</th>
+                <th className="text-center w-32">Terisi</th>
+                <th className="min-w-[200px]">Progres</th>
+                <th className="text-center w-32">Status</th>
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((item, idx) => {
-                const isComplete = item.attendance !== null && item.practice !== null && item.knowledge !== null
-                const final = isComplete ? Math.round(item.final_score) : '-'
-                
-                let grade = 'C'
-                if (isComplete) {
-                  if (item.final_score >= 86) grade = 'A'
-                  else if (item.final_score >= 51) grade = 'B'
-                }
-
-                return (
-                  <tr key={item.id}>
-                    <td className="text-center text-slate-400">{idx + 1}</td>
-                    <td className="font-semibold text-slate-800">{item.students?.name}</td>
-                    <td>{item.students?.class_name}</td>
-                    <td>
-                      <span className="text-xs font-medium text-slate-500">{item.extracurriculars?.name}</span>
-                    </td>
-                    <td className="text-center">{item.attendance ?? '-'}</td>
-                    <td className="text-center">{item.practice ?? '-'}</td>
-                    <td className="text-center">{item.knowledge ?? '-'}</td>
-                    <td className="text-center font-bold text-slate-700">{final}</td>
-                    <td className="text-center">
-                      <span className={`
-                        inline-flex items-center justify-center w-7 h-7 rounded-lg font-bold text-[10px]
-                        ${grade === 'A' ? 'bg-green-100 text-green-700' : ''}
-                        ${grade === 'B' ? 'bg-blue-100 text-blue-700' : ''}
-                        ${grade === 'C' ? 'bg-red-100 text-red-700' : ''}
-                      `}>
-                        {grade}
+              {stats.map((ekskul) => (
+                <tr key={ekskul.id}>
+                  <td className="font-bold text-slate-700">{ekskul.name}</td>
+                  <td className="text-center font-semibold text-slate-500">{ekskul.totalStudents}</td>
+                  <td className="text-center font-semibold text-slate-500">{ekskul.filledScores}</td>
+                  <td>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-1000 ${ekskul.progress === 100 ? 'bg-green-500' : 'bg-primary-500'}`}
+                          style={{ width: `${ekskul.progress}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-xs font-bold text-slate-400 w-8">{Math.round(ekskul.progress)}%</span>
+                    </div>
+                  </td>
+                  <td className="text-center">
+                    {ekskul.totalStudents === 0 ? (
+                      <span className="text-[10px] font-bold text-slate-300 uppercase">Belum ada siswa</span>
+                    ) : ekskul.progress === 100 ? (
+                      <span className="px-3 py-1 bg-green-50 text-green-600 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1">
+                        <CheckCircle2 size={12} /> Lengkap
                       </span>
-                    </td>
-                  </tr>
-                )
-              })}
+                    ) : ekskul.progress > 0 ? (
+                      <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1">
+                        <Clock size={12} /> Berjalan
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1">
+                        <AlertTriangle size={12} /> Belum diisi
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        ) : (
-          <div className="p-20 text-center text-slate-400">
-            <p>Tidak ada data siswa ditemukan.</p>
-          </div>
         )}
       </div>
     </div>

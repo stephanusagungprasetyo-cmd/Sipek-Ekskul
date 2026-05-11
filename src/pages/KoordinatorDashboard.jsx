@@ -1,26 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import * as XLSX from 'xlsx'
-import { 
-  Search, 
-  Loader2, 
-  Filter, 
-  Download, 
-  TrendingUp, 
-  Users, 
-  Award,
-  PieChart
-} from 'lucide-react'
+import { Search, Loader2, Download, Printer, Filter, Star } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function KoordinatorDashboard() {
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [ekskulFilter, setEkskulFilter] = useState('All')
-  const [classFilter, setClassFilter] = useState('All')
-  const [ekskuls, setEkskuls] = useState([])
-  const [classes, setClasses] = useState([])
 
   useEffect(() => {
     fetchData()
@@ -28,218 +14,131 @@ export default function KoordinatorDashboard() {
 
   async function fetchData() {
     setLoading(true)
-    const { data: scoresData, error } = await supabase
-      .from('scores')
-      .select('*, students(*), extracurriculars(*)')
-    
+    // Fetch students with their 3 possible ekskuls
+    const { data: students, error } = await supabase
+      .from('students')
+      .select(`
+        *,
+        wajib:extracurriculars!wajib_id(id, name),
+        pilihan1:extracurriculars!pilihan_1_id(id, name),
+        pilihan2:extracurriculars!pilihan_2_id(id, name),
+        scores(*)
+      `)
+      .order('class_name', { ascending: true })
+
     if (error) {
-      toast.error('Gagal mengambil data')
+      toast.error('Gagal mengambil data rekap')
     } else {
-      setData(scoresData)
-      const uniqueEkskuls = [...new Set(scoresData.map(item => item.extracurriculars?.name))].filter(Boolean)
-      const uniqueClasses = [...new Set(scoresData.map(item => item.students?.class_name))].filter(Boolean).sort()
-      setEkskuls(uniqueEkskuls)
-      setClasses(uniqueClasses)
+      setData(students || [])
     }
     setLoading(false)
   }
 
-  const filteredData = data.filter(item => {
-    const matchesSearch = item.students?.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesEkskul = ekskulFilter === 'All' || item.extracurriculars?.name === ekskulFilter
-    const matchesClass = classFilter === 'All' || item.students?.class_name === classFilter
-    return matchesSearch && matchesEkskul && matchesClass
-  })
-
-  // Statistics
-  const totalSiswa = filteredData.length
-  const avgNilai = totalSiswa > 0 
-    ? Math.round(filteredData.reduce((acc, item) => acc + (item.final_score || 0), 0) / totalSiswa)
-    : 0
-    
-  const distribution = filteredData.reduce((acc, item) => {
-    const isComplete = item.attendance !== null && item.practice !== null && item.knowledge !== null
-    let grade = 'C'
-    if (isComplete) {
-      if (item.final_score >= 86) grade = 'A'
-      else if (item.final_score >= 51) grade = 'B'
-    }
-    acc[grade] = (acc[grade] || 0) + 1
-    return acc
-  }, { A: 0, B: 0, C: 0 })
-
-  const exportToExcel = () => {
-    if (filteredData.length === 0) return
-    
-    const exportData = filteredData.map((item, idx) => {
-      const isComplete = item.attendance !== null && item.practice !== null && item.knowledge !== null
-      let grade = 'C'
-      if (isComplete) {
-        if (item.final_score >= 86) grade = 'A'
-        else if (item.final_score >= 51) grade = 'B'
-      }
-      
-      return {
-        'No': idx + 1,
-        'Nama Siswa': item.students?.name,
-        'JK': item.students?.gender,
-        'Kelas': item.students?.class_name,
-        'Ekstrakurikuler': item.extracurriculars?.name,
-        'Kehadiran': item.attendance,
-        'Praktik': item.practice,
-        'Pengetahuan': item.knowledge,
-        'Nilai Akhir': isComplete ? Math.round(item.final_score) : '-',
-        'Nilai Huruf': grade
-      }
-    })
-
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Rekap Nilai")
-    XLSX.writeFile(wb, `Rekap_Nilai_Ekskul_${new Date().toLocaleDateString()}.xlsx`)
-    toast.success('File Excel berhasil diunduh')
+  const getScoreForEkskul = (student, ekskulId) => {
+    if (!ekskulId || !student.scores) return null
+    return student.scores.find(s => s.extracurricular_id === ekskulId)
   }
+
+  const renderScore = (score) => {
+    if (!score) return '-'
+    // We'll show the average_score or just the grade
+    const avg = score.average_score || 0
+    if (avg >= 86) return <span className="text-green-600 font-bold">A</span>
+    if (avg >= 71) return <span className="text-blue-600 font-bold">B</span>
+    return <span className="text-slate-400">C</span>
+  }
+
+  const filteredData = data.filter(student => 
+    student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    student.class_name.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Rekapitulasi Nilai</h2>
-          <p className="text-slate-500 mt-1">Laporan statistik dan ekspor data nilai rapor ekstrakurikuler.</p>
-        </div>
-        
-        <button 
-          onClick={exportToExcel}
-          className="btn btn-primary flex items-center gap-2 px-6 shadow-xl shadow-primary-200"
-        >
-          <Download size={18} />
-          Export Excel
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="card border-l-4 border-l-blue-500">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
-              <Users size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Siswa</p>
-              <p className="text-2xl font-bold text-slate-800">{totalSiswa}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="card border-l-4 border-l-primary-500">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-primary-50 text-primary-600 rounded-2xl flex items-center justify-center">
-              <TrendingUp size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Rata-rata Nilai</p>
-              <p className="text-2xl font-bold text-slate-800">{avgNilai}</p>
-            </div>
-          </div>
+          <p className="text-slate-500 mt-1">Laporan menyeluruh nilai wajib dan pilihan siswa.</p>
         </div>
 
-        <div className="card border-l-4 border-l-green-500">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center">
-              <Award size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Nilai A & B</p>
-              <p className="text-2xl font-bold text-slate-800">{distribution.A + distribution.B}</p>
-            </div>
+        <div className="flex gap-3">
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              placeholder="Cari siswa..."
+              className="input-field pl-12"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-        </div>
-
-        <div className="card border-l-4 border-l-orange-500">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center">
-              <PieChart size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Nilai C</p>
-              <p className="text-2xl font-bold text-slate-800">{distribution.C}</p>
-            </div>
-          </div>
+          <button className="btn btn-secondary flex items-center gap-2">
+            <Printer size={18} />
+            Cetak
+          </button>
         </div>
       </div>
 
-      <div className="card grid grid-cols-1 md:grid-cols-4 gap-4 p-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input
-            type="text"
-            placeholder="Cari nama..."
-            className="input-field pl-10 text-sm py-2"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="card border-0 bg-indigo-600 text-white shadow-xl shadow-indigo-100">
+          <p className="text-indigo-100 text-[10px] font-bold uppercase tracking-widest">Ekskul Wajib</p>
+          <div className="flex items-end justify-between mt-2">
+            <h3 className="text-3xl font-bold">Pramuka+</h3>
+            <Star className="text-indigo-400 opacity-50" size={24} />
+          </div>
         </div>
-        <select 
-          className="input-field text-sm py-2"
-          value={ekskulFilter}
-          onChange={(e) => setEkskulFilter(e.target.value)}
-        >
-          <option value="All">Semua Ekskul</option>
-          {ekskuls.map(e => <option key={e} value={e}>{e}</option>)}
-        </select>
-        <select 
-          className="input-field text-sm py-2"
-          value={classFilter}
-          onChange={(e) => setClassFilter(e.target.value)}
-        >
-          <option value="All">Semua Kelas</option>
-          {classes.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <div className="card border-slate-100 bg-white">
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Total Siswa</p>
+          <h3 className="text-3xl font-bold text-slate-800 mt-1">{data.length}</h3>
+        </div>
       </div>
 
       <div className="table-container">
         {loading ? (
           <div className="p-20 text-center text-slate-400 flex flex-col items-center gap-3">
             <Loader2 className="animate-spin" size={32} />
-            <p>Memuat data rekap...</p>
+            <p>Menyusun laporan...</p>
           </div>
         ) : filteredData.length > 0 ? (
           <table className="table-modern">
             <thead>
-              <tr>
-                <th className="w-16 text-center">No</th>
-                <th>Nama Siswa</th>
-                <th>Kelas</th>
-                <th>Ekskul</th>
-                <th className="text-center">Akhir</th>
-                <th className="text-center">Huruf</th>
+              <tr className="bg-slate-50/50">
+                <th rowSpan="2" className="text-center w-12">No</th>
+                <th rowSpan="2" className="min-w-[200px]">Nama Siswa</th>
+                <th rowSpan="2" className="text-center w-24">Kelas</th>
+                <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-indigo-50/30 text-indigo-700">Ekskul Wajib</th>
+                <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-amber-50/30 text-amber-700">Pilihan 1</th>
+                <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-teal-50/30 text-teal-700">Pilihan 2</th>
+              </tr>
+              <tr className="bg-slate-50/50">
+                <th className="text-xs text-slate-400">Nama</th><th className="text-xs text-slate-400 w-16">Nilai</th>
+                <th className="text-xs text-slate-400">Nama</th><th className="text-xs text-slate-400 w-16">Nilai</th>
+                <th className="text-xs text-slate-400">Nama</th><th className="text-xs text-slate-400 w-16">Nilai</th>
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((item, idx) => {
-                const isComplete = item.attendance !== null && item.practice !== null && item.knowledge !== null
-                const final = isComplete ? Math.round(item.final_score) : '-'
-                let grade = 'C'
-                if (isComplete) {
-                  if (item.final_score >= 86) grade = 'A'
-                  else if (item.final_score >= 51) grade = 'B'
-                }
+              {filteredData.map((student, idx) => {
+                const sWajib = getScoreForEkskul(student, student.wajib?.id)
+                const sP1 = getScoreForEkskul(student, student.pilihan1?.id)
+                const sP2 = getScoreForEkskul(student, student.pilihan2?.id)
+
                 return (
-                  <tr key={item.id}>
+                  <tr key={student.id}>
                     <td className="text-center text-slate-400">{idx + 1}</td>
-                    <td className="font-semibold text-slate-800">{item.students?.name}</td>
-                    <td>{item.students?.class_name}</td>
-                    <td><span className="text-xs text-slate-500">{item.extracurriculars?.name}</span></td>
-                    <td className="text-center font-bold text-slate-700">{final}</td>
-                    <td className="text-center">
-                      <span className={`
-                        inline-flex items-center justify-center w-7 h-7 rounded-lg font-bold text-[10px]
-                        ${grade === 'A' ? 'bg-green-100 text-green-700' : ''}
-                        ${grade === 'B' ? 'bg-blue-100 text-blue-700' : ''}
-                        ${grade === 'C' ? 'bg-red-100 text-red-700' : ''}
-                      `}>
-                        {grade}
-                      </span>
-                    </td>
+                    <td className="font-bold text-slate-800">{student.name}</td>
+                    <td className="text-center text-slate-500 font-medium">{student.class_name}</td>
+                    
+                    {/* Wajib */}
+                    <td className="text-[11px] font-semibold text-slate-600">{student.wajib?.name || '-'}</td>
+                    <td className="text-center font-black">{renderScore(sWajib)}</td>
+                    
+                    {/* P1 */}
+                    <td className="text-[11px] font-semibold text-slate-600">{student.pilihan1?.name || '-'}</td>
+                    <td className="text-center font-black">{renderScore(sP1)}</td>
+                    
+                    {/* P2 */}
+                    <td className="text-[11px] font-semibold text-slate-600">{student.pilihan2?.name || '-'}</td>
+                    <td className="text-center font-black">{renderScore(sP2)}</td>
                   </tr>
                 )
               })}
@@ -247,7 +146,7 @@ export default function KoordinatorDashboard() {
           </table>
         ) : (
           <div className="p-20 text-center text-slate-400">
-            <p>Data tidak ditemukan.</p>
+            <p>Data rekapitulasi belum tersedia.</p>
           </div>
         )}
       </div>

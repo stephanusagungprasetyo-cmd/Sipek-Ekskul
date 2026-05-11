@@ -17,7 +17,12 @@ export default function MasterData() {
     setLoading(true)
     const { data, error } = await supabase
       .from('students')
-      .select('*, extracurriculars(name)')
+      .select(`
+        *,
+        wajib:extracurriculars!wajib_id(name),
+        pilihan1:extracurriculars!pilihan_1_id(name),
+        pilihan2:extracurriculars!pilihan_2_id(name)
+      `)
       .order('class_name', { ascending: true })
     
     if (error) {
@@ -55,44 +60,50 @@ export default function MasterData() {
           const studentName = row['Nama Siswa'] || row['Nama']
           const gender = row['JK'] || row['Jenis Kelamin']
           const className = row['Kelas']
-          const ekskulName = row['Ekskul'] || row['Ekstrakurikuler']
+          
+          const wajibName = row['Ekskul Wajib'] || row['Wajib']
+          const p1Name = row['Ekskul Pilihan 1'] || row['Pilihan 1']
+          const p2Name = row['Ekskul Pilihan 2'] || row['Pilihan 2']
 
-          if (!studentName || !ekskulName) continue
+          if (!studentName) continue
 
-          // 1. Get or Create Extracurricular
-          let { data: ekskul } = await supabase
-            .from('extracurriculars')
-            .select('id')
-            .eq('name', ekskulName)
-            .single()
-
-          if (!ekskul) {
-            const { data: newEkskul } = await supabase
+          const getEkskulId = async (name) => {
+            if (!name) return null
+            const { data } = await supabase
               .from('extracurriculars')
-              .insert({ name: ekskulName })
               .select('id')
+              .ilike('name', name.trim())
               .single()
-            ekskul = newEkskul
+            return data?.id || null
           }
 
-          // 2. Insert Student
+          const wajibId = await getEkskulId(wajibName)
+          const p1Id = await getEkskulId(p1Name)
+          const p2Id = await getEkskulId(p2Name)
+
+          // 1. Insert Student
           const { data: student, error: studentError } = await supabase
             .from('students')
             .insert({
               name: studentName,
               gender: gender === 'P' || gender?.toLowerCase().includes('perempuan') ? 'P' : 'L',
               class_name: className || '-',
-              extracurricular_id: ekskul.id
+              wajib_id: wajibId,
+              pilihan_1_id: p1Id,
+              pilihan_2_id: p2Id
             })
             .select('id')
             .single()
 
           if (student && !studentError) {
-            // 3. Initialize Score
-            await supabase.from('scores').insert({
-              student_id: student.id,
-              extracurricular_id: ekskul.id
-            })
+            // 2. Initialize Scores for each role
+            const roles = [wajibId, p1Id, p2Id].filter(Boolean)
+            for (const eid of roles) {
+              await supabase.from('scores').insert({
+                student_id: student.id,
+                extracurricular_id: eid
+              })
+            }
           }
         }
 
@@ -184,7 +195,9 @@ export default function MasterData() {
                 <th>Nama Siswa</th>
                 <th>JK</th>
                 <th>Kelas</th>
-                <th>Ekstrakurikuler</th>
+                <th>Wajib</th>
+                <th>Pilihan 1</th>
+                <th>Pilihan 2</th>
               </tr>
             </thead>
             <tbody>
@@ -195,9 +208,25 @@ export default function MasterData() {
                   <td>{student.gender}</td>
                   <td>{student.class_name}</td>
                   <td>
-                    <span className="px-2.5 py-1 bg-slate-100 rounded-full text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {student.extracurriculars?.name}
-                    </span>
+                    {student.wajib?.name && (
+                      <span className="px-2.5 py-1 bg-indigo-50 rounded-full text-[10px] font-bold text-indigo-600 uppercase tracking-wider">
+                        {student.wajib.name}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {student.pilihan1?.name && (
+                      <span className="px-2.5 py-1 bg-amber-50 rounded-full text-[10px] font-bold text-amber-600 uppercase tracking-wider">
+                        {student.pilihan1.name}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {student.pilihan2?.name && (
+                      <span className="px-2.5 py-1 bg-teal-50 rounded-full text-[10px] font-bold text-teal-600 uppercase tracking-wider">
+                        {student.pilihan2.name}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
