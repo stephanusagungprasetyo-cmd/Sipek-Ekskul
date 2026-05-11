@@ -1,25 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import { Search, Loader2, Save, Filter, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Search, Loader2, Save, Filter, Plus, X, UserPlus, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const ATTENDANCE_VALUES = ['', 'O', 'I', 'A', 'S']
 
 const calculateAverage = (item) => {
-  // Attendance calculation: O=100, I=100, A=0, S=100 (or similar)
-  // But usually attendance is just count of O. 
-  // Let's use a simpler logic: Average of Practice and Knowledge, weighted by attendance ratio.
-  // Or just average of all valid practice and knowledge scores.
-  
   const practices = [item.prac_1, item.prac_2, item.prac_3, item.prac_4, item.prac_5].filter(v => v !== null && v !== '')
   const knowledge = [item.know_1, item.know_2, item.know_3].filter(v => v !== null && v !== '')
-  
   if (practices.length === 0 && knowledge.length === 0) return 0
-  
   const pAvg = practices.length > 0 ? practices.reduce((a, b) => a + parseFloat(b), 0) / practices.length : 0
   const kAvg = knowledge.length > 0 ? knowledge.reduce((a, b) => a + parseFloat(b), 0) / knowledge.length : 0
-  
   if (practices.length > 0 && knowledge.length > 0) return (pAvg + kAvg) / 2
   return pAvg || kAvg
 }
@@ -37,6 +29,11 @@ export default function PelatihDashboard() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedEkskul, setSelectedEkskul] = useState(profile?.extracurricular_id || '')
   const [ekskuls, setEkskuls] = useState([])
+  const [viewMode, setViewMode] = useState('attendance') // 'attendance', 'practice', 'knowledge'
+  
+  // Modal State
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newStudent, setNewStudent] = useState({ name: '', gender: 'L', class_name: '' })
 
   useEffect(() => {
     async function fetchEkskuls() {
@@ -51,13 +48,11 @@ export default function PelatihDashboard() {
       setLoading(false)
       return
     }
-
     setLoading(true)
     const { data: scoresData, error } = await supabase
       .from('scores')
       .select('*, students(*)')
       .eq('extracurricular_id', selectedEkskul)
-    
     if (error) {
       toast.error('Gagal mengambil data nilai')
     } else {
@@ -71,9 +66,7 @@ export default function PelatihDashboard() {
   }, [fetchData])
 
   const handleUpdate = async (id, field, value) => {
-    // Optimistic
     setData(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
-
     const { error } = await supabase.from('scores').update({ [field]: value }).eq('id', id)
     if (error) toast.error('Gagal menyimpan')
   }
@@ -83,6 +76,45 @@ export default function PelatihDashboard() {
     handleUpdate(id, field, ATTENDANCE_VALUES[nextIdx])
   }
 
+  const handleAddStudent = async (e) => {
+    e.preventDefault()
+    if (!selectedEkskul) return toast.error('Pilih Ekskul terlebih dahulu')
+    
+    setLoading(true)
+    try {
+      // 1. Check if student with same name exists
+      let { data: student } = await supabase.from('students').select('id').ilike('name', newStudent.name).single()
+      
+      if (!student) {
+        const { data: created, error: sErr } = await supabase.from('students').insert({
+          name: newStudent.name,
+          gender: newStudent.gender,
+          class_name: newStudent.class_name,
+          pilihan_1_id: selectedEkskul // Default to Pilihan 1 if added by coach
+        }).select('id').single()
+        if (sErr) throw sErr
+        student = created
+      }
+
+      // 2. Create Score entry
+      const { error: cErr } = await supabase.from('scores').insert({
+        student_id: student.id,
+        extracurricular_id: selectedEkskul
+      })
+      
+      if (cErr && cErr.code !== '23505') throw cErr // 23505 is duplicate key
+
+      toast.success('Siswa berhasil ditambahkan')
+      setShowAddModal(false)
+      setNewStudent({ name: '', gender: 'L', class_name: '' })
+      fetchData()
+    } catch (err) {
+      toast.error('Gagal menambah siswa: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const filteredData = data.filter(item => 
     item.students?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.students?.class_name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -90,88 +122,110 @@ export default function PelatihDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div className="space-y-4">
-          <div>
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="space-y-1">
             <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Panel Pelatih</h2>
-            <p className="text-slate-500 mt-1">Kelola presensi dan nilai anggota ekstrakurikuler.</p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Filter size={18} className="text-slate-400" />
-            <select 
-              className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary-500 transition-all shadow-sm"
-              value={selectedEkskul}
-              onChange={(e) => setSelectedEkskul(e.target.value)}
-            >
-              <option value="">Pilih Ekstrakurikuler</option>
-              {ekskuls.map(e => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-3">
+              <select 
+                className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"
+                value={selectedEkskul}
+                onChange={(e) => setSelectedEkskul(e.target.value)}
+              >
+                <option value="">Pilih Ekstrakurikuler</option>
+                {ekskuls.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              
+              <select 
+                className="bg-primary-600 text-white border-0 rounded-xl px-4 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-primary-300 shadow-lg shadow-primary-100"
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value)}
+              >
+                <option value="attendance">Kategori: Presensi</option>
+                <option value="practice">Kategori: Nilai Praktik</option>
+                <option value="knowledge">Kategori: Nilai Pengetahuan</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            type="text"
-            placeholder="Cari nama siswa..."
-            className="input-field pl-12"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              placeholder="Cari siswa..."
+              className="input-field pl-12"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="btn btn-secondary flex items-center gap-2 border-dashed border-slate-300 text-slate-600"
+          >
+            <UserPlus size={18} />
+            Tambah Siswa
+          </button>
         </div>
       </div>
 
-      <div className="table-container overflow-x-auto">
+      <div className="table-container">
         {loading ? (
           <div className="p-20 text-center text-slate-400 flex flex-col items-center gap-3">
             <Loader2 className="animate-spin" size={32} />
             <p>Memuat data...</p>
           </div>
         ) : filteredData.length > 0 ? (
-          <table className="table-modern whitespace-nowrap">
+          <table className="table-modern">
             <thead>
               <tr className="bg-slate-50/50">
-                <th rowSpan="2" className="text-center">Siswa</th>
-                <th colSpan="12" className="text-center border-b border-slate-100 py-2">Kehadiran (1-12)</th>
-                <th colSpan="5" className="text-center border-b border-slate-100 py-2">Praktik (1-5)</th>
-                <th colSpan="3" className="text-center border-b border-slate-100 py-2">Pengetahuan (1-3)</th>
-                <th rowSpan="2" className="text-center">Nilai</th>
-              </tr>
-              <tr className="bg-slate-50/50">
-                {[...Array(12)].map((_, i) => <th key={i} className="w-8 text-center px-1 text-[10px]">{i+1}</th>)}
-                {[...Array(5)].map((_, i) => <th key={i} className="w-12 text-center px-1 text-[10px]">{i+1}</th>)}
-                {[...Array(3)].map((_, i) => <th key={i} className="w-12 text-center px-1 text-[10px]">{i+1}</th>)}
+                <th className="w-16 text-center">No</th>
+                <th className="min-w-[180px]">Nama Siswa</th>
+                <th className="w-24 text-center">Kelas</th>
+                
+                {/* Dynamic Columns based on viewMode */}
+                {viewMode === 'attendance' && [...Array(12)].map((_, i) => (
+                  <th key={i} className="w-10 text-center px-1">{i+1}</th>
+                ))}
+                
+                {viewMode === 'practice' && [...Array(5)].map((_, i) => (
+                  <th key={i} className="w-16 text-center px-1">P-{i+1}</th>
+                ))}
+                
+                {viewMode === 'knowledge' && [...Array(3)].map((_, i) => (
+                  <th key={i} className="w-16 text-center px-1">U-{i+1}</th>
+                ))}
+                
+                <th className="w-20 text-center">Rerata</th>
+                <th className="w-16 text-center">Grade</th>
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((item) => {
+              {filteredData.map((item, idx) => {
                 const avg = calculateAverage(item)
                 const grade = getGrade(avg)
                 
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/30 transition-colors">
-                    <td className="sticky left-0 bg-white z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                      <p className="font-bold text-slate-800">{item.students?.name}</p>
-                      <p className="text-[10px] text-slate-400 uppercase tracking-tighter font-bold">{item.students?.class_name}</p>
-                    </td>
+                    <td className="text-center text-slate-400">{idx + 1}</td>
+                    <td className="font-bold text-slate-800">{item.students?.name}</td>
+                    <td className="text-center text-slate-500 font-medium">{item.students?.class_name}</td>
                     
-                    {/* Attendance */}
-                    {[...Array(12)].map((_, i) => {
+                    {/* Attendance Grid */}
+                    {viewMode === 'attendance' && [...Array(12)].map((_, i) => {
                       const field = `att_${i+1}`
                       const val = item[field]
                       return (
                         <td key={i} className="p-1">
                           <button
                             onClick={() => cycleAttendance(item.id, field, val)}
-                            className={`w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold transition-all
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black transition-all
                               ${!val ? 'bg-slate-100 text-slate-300' : ''}
-                              ${val === 'O' ? 'bg-green-500 text-white shadow-sm shadow-green-200' : ''}
-                              ${val === 'I' ? 'bg-blue-500 text-white shadow-sm shadow-blue-200' : ''}
-                              ${val === 'S' ? 'bg-amber-500 text-white shadow-sm shadow-amber-200' : ''}
-                              ${val === 'A' ? 'bg-red-500 text-white shadow-sm shadow-red-200' : ''}
+                              ${val === 'O' ? 'bg-green-500 text-white' : ''}
+                              ${val === 'I' ? 'bg-blue-500 text-white' : ''}
+                              ${val === 'S' ? 'bg-amber-500 text-white' : ''}
+                              ${val === 'A' ? 'bg-red-500 text-white' : ''}
                             `}
                           >
                             {val || '-'}
@@ -180,14 +234,14 @@ export default function PelatihDashboard() {
                       )
                     })}
 
-                    {/* Practice */}
-                    {[...Array(5)].map((_, i) => {
+                    {/* Practice Grid */}
+                    {viewMode === 'practice' && [...Array(5)].map((_, i) => {
                       const field = `prac_${i+1}`
                       return (
                         <td key={i} className="p-1">
                           <input
                             type="number"
-                            className="w-10 h-7 bg-slate-50 border-0 rounded-md text-center text-[10px] font-bold outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                            className="w-full h-9 bg-slate-50 border-0 rounded-lg text-center text-xs font-bold focus:ring-2 focus:ring-primary-500 transition-all outline-none"
                             value={item[field] || ''}
                             onChange={(e) => handleUpdate(item.id, field, e.target.value)}
                           />
@@ -195,14 +249,14 @@ export default function PelatihDashboard() {
                       )
                     })}
 
-                    {/* Knowledge */}
-                    {[...Array(3)].map((_, i) => {
+                    {/* Knowledge Grid */}
+                    {viewMode === 'knowledge' && [...Array(3)].map((_, i) => {
                       const field = `know_${i+1}`
                       return (
                         <td key={i} className="p-1">
                           <input
                             type="number"
-                            className="w-10 h-7 bg-slate-50 border-0 rounded-md text-center text-[10px] font-bold outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                            className="w-full h-9 bg-slate-50 border-0 rounded-lg text-center text-xs font-bold focus:ring-2 focus:ring-primary-500 transition-all outline-none"
                             value={item[field] || ''}
                             onChange={(e) => handleUpdate(item.id, field, e.target.value)}
                           />
@@ -210,14 +264,14 @@ export default function PelatihDashboard() {
                       )
                     })}
 
-                    <td className="text-center p-2">
-                      <div className={`
-                        inline-flex flex-col items-center justify-center min-w-[40px] p-1 rounded-xl
-                        ${grade === 'A' ? 'bg-green-50 text-green-700' : grade === 'B' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}
+                    <td className="text-center font-bold text-slate-700">{Math.round(avg)}</td>
+                    <td className="text-center">
+                      <span className={`
+                        inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold text-xs
+                        ${grade === 'A' ? 'bg-green-100 text-green-700' : grade === 'B' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}
                       `}>
-                        <span className="text-xs font-black">{grade}</span>
-                        <span className="text-[8px] font-bold opacity-50">{Math.round(avg)}</span>
-                      </div>
+                        {grade}
+                      </span>
                     </td>
                   </tr>
                 )
@@ -226,34 +280,89 @@ export default function PelatihDashboard() {
           </table>
         ) : (
           <div className="p-20 text-center text-slate-400">
-            <p>Pilih ekstrakurikuler atau cari siswa untuk memulai penilaian.</p>
+            <p>Belum ada siswa di ekstrakurikuler ini.</p>
           </div>
         )}
       </div>
 
-      <div className="bg-white border border-slate-100 rounded-2xl p-4 flex flex-wrap gap-6 items-center shadow-sm">
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-2">Legenda Presensi:</p>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-green-500 rounded-md text-white text-[10px] flex items-center justify-center font-bold">O</div>
-          <span className="text-xs text-slate-600 font-medium">Hadir</span>
+      {/* Legend & Save Status */}
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-100">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Legenda:</span>
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+            <span className="w-5 h-5 bg-green-500 text-white rounded flex items-center justify-center text-[10px] font-bold">O</span> Hadir
+          </div>
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+            <span className="w-5 h-5 bg-blue-500 text-white rounded flex items-center justify-center text-[10px] font-bold">I</span> Izin
+          </div>
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+            <span className="w-5 h-5 bg-amber-500 text-white rounded flex items-center justify-center text-[10px] font-bold">S</span> Sakit
+          </div>
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+            <span className="w-5 h-5 bg-red-500 text-white rounded flex items-center justify-center text-[10px] font-bold">A</span> Alfa
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-blue-500 rounded-md text-white text-[10px] flex items-center justify-center font-bold">I</div>
-          <span className="text-xs text-slate-600 font-medium">Izin</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-amber-500 rounded-md text-white text-[10px] flex items-center justify-center font-bold">S</div>
-          <span className="text-xs text-slate-600 font-medium">Sakit</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-red-500 rounded-md text-white text-[10px] flex items-center justify-center font-bold">A</div>
-          <span className="text-xs text-slate-600 font-medium">Alfa</span>
-        </div>
-        <div className="ml-auto flex items-center gap-2 text-xs text-slate-400 italic">
-          <Save size={14} />
-          <span>Perubahan tersimpan otomatis.</span>
+        <div className="flex items-center gap-2 text-xs text-slate-400 italic">
+          <Save size={14} /> Tersimpan otomatis
         </div>
       </div>
+
+      {/* Add Student Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="text-xl font-bold text-slate-800">Tambah Siswa Baru</h3>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleAddStudent} className="p-8 space-y-5">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nama Lengkap</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Nama siswa..." 
+                  required
+                  value={newStudent.name}
+                  onChange={(e) => setNewStudent({...newStudent, name: e.target.value})}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Jenis Kelamin</label>
+                  <select 
+                    className="input-field"
+                    value={newStudent.gender}
+                    onChange={(e) => setNewStudent({...newStudent, gender: e.target.value})}
+                  >
+                    <option value="L">Laki-laki</option>
+                    <option value="P">Perempuan</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Kelas</label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    placeholder="Contoh: 7A" 
+                    required
+                    value={newStudent.class_name}
+                    onChange={(e) => setNewStudent({...newStudent, class_name: e.target.value})}
+                  />
+                </div>
+              </div>
+              <div className="pt-4">
+                <button type="submit" disabled={loading} className="w-full btn btn-primary py-3.5 flex items-center justify-center gap-2">
+                  {loading ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
+                  Daftarkan Siswa
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
