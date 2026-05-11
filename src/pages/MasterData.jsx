@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, Trash2 } from 'lucide-react'
+import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, Trash2, Database } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function MasterData() {
