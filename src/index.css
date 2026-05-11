@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply bg-primary-500 text-white hover:bg-primary-600 shadow-sm hover:shadow-primary-200;
+  }
+  .btn-secondary {
+    @apply bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl border border-slate-100 shadow-sm p-6;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none transition-all;
+  }
+
+  .table-container {
+    @apply overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm;
+  }
+
+  .table-modern {
+    @apply w-full border-collapse text-left text-sm;
+  }
+
+  .table-modern th {
+    @apply bg-slate-50/50 p-4 font-semibold text-slate-600 border-b border-slate-100 sticky top-0 z-10;
+  }
+
+  .table-modern td {
+    @apply p-4 border-b border-slate-50 text-slate-600;
+  }
+
+  .table-modern tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .table-modern tr:hover td {
+    @apply bg-slate-50/30;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300;
+}
