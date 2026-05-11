@@ -56,63 +56,57 @@ export default function MasterData() {
         // Expecting columns: Nama, JK, Kelas, Ekskul (or similar)
         toast.loading('Memproses data...', { id: 'uploading' })
 
+        const WAJIB_LIST = ['pramuka', 'pmr', 'dewan galang', 'paskibra']
+
         for (const row of data) {
-          const studentName = row['Nama Siswa'] || row['Nama']
-          const gender = row['JK'] || row['Jenis Kelamin']
-          const className = row['Kelas']
+          const studentName = (row['Nama Siswa'] || row['Nama'] || '').toString().trim()
+          const gender = (row['JK'] || row['Jenis Kelamin'] || '').toString().trim()
+          const className = (row['Kelas'] || '').toString().trim()
+          const ekskulName = (row['Ekskul'] || row['Ekstrakurikuler'] || '').toString().trim()
+
+          if (!studentName || !ekskulName) continue
+
+          // Get Ekskul ID
+          const { data: ekskulData } = await supabase
+            .from('extracurriculars')
+            .select('id')
+            .ilike('name', ekskulName)
+            .single()
           
-          const wajibName = row['Ekskul Wajib'] || row['Wajib']
-          const p1Name = row['Ekskul Pilihan 1'] || row['Pilihan 1']
-          const p2Name = row['Ekskul Pilihan 2'] || row['Pilihan 2']
+          if (!ekskulData) continue
+          const ekskulId = ekskulData.id
 
-          if (!studentName) continue
-
-          const getEkskulId = async (name) => {
-            if (!name) return null
-            const { data } = await supabase
-              .from('extracurriculars')
-              .select('id')
-              .ilike('name', name.trim())
-              .single()
-            return data?.id || null
-          }
-
-          const wajibId = await getEkskulId(wajibName)
-          const p1Id = await getEkskulId(p1Name)
-          const p2Id = await getEkskulId(p2Name)
-
-          // 1. Check if student exists (De-duplication)
+          // Check if student exists
           const { data: existingStudent } = await supabase
             .from('students')
-            .select('id')
-            .ilike('name', studentName.trim())
+            .select('*')
+            .ilike('name', studentName)
             .single()
 
           let studentId = existingStudent?.id
+          const isWajib = WAJIB_LIST.includes(ekskulName.toLowerCase())
 
           if (studentId) {
-            // Update existing student
-            await supabase
-              .from('students')
-              .update({
-                gender: gender === 'P' || gender?.toLowerCase().includes('perempuan') ? 'P' : 'L',
-                class_name: className || '-',
-                wajib_id: wajibId,
-                pilihan_1_id: p1Id,
-                pilihan_2_id: p2Id
-              })
-              .eq('id', studentId)
+            // Update logic: determine where to put the new ekskul
+            let updatePayload = {}
+            if (isWajib) {
+              updatePayload.wajib_id = ekskulId
+            } else if (!existingStudent.pilihan_1_id || existingStudent.pilihan_1_id === ekskulId) {
+              updatePayload.pilihan_1_id = ekskulId
+            } else {
+              updatePayload.pilihan_2_id = ekskulId
+            }
+
+            await supabase.from('students').update(updatePayload).eq('id', studentId)
           } else {
-            // Insert new student
+            // New student
             const { data: newStudent } = await supabase
               .from('students')
               .insert({
-                name: studentName.trim(),
-                gender: gender === 'P' || gender?.toLowerCase().includes('perempuan') ? 'P' : 'L',
+                name: studentName,
+                gender: gender === 'P' || gender.toLowerCase().includes('perempuan') ? 'P' : 'L',
                 class_name: className || '-',
-                wajib_id: wajibId,
-                pilihan_1_id: p1Id,
-                pilihan_2_id: p2Id
+                [isWajib ? 'wajib_id' : 'pilihan_1_id']: ekskulId
               })
               .select('id')
               .single()
@@ -120,20 +114,16 @@ export default function MasterData() {
           }
 
           if (studentId) {
-            // 2. Refresh Scores: Delete old ones and insert new ones for assigned ekskuls
-            await supabase.from('scores').delete().eq('student_id', studentId)
-            
-            const roles = [wajibId, p1Id, p2Id].filter(Boolean)
-            for (const eid of roles) {
-              await supabase.from('scores').insert({
-                student_id: studentId,
-                extracurricular_id: eid
-              })
-            }
+            // Initialize score for THIS specific ekskul
+            // Using upsert to avoid duplicates if same row is uploaded twice
+            await supabase.from('scores').upsert({
+              student_id: studentId,
+              extracurricular_id: ekskulId
+            }, { onConflict: 'student_id,extracurricular_id' })
           }
         }
 
-        toast.success('Berhasil mengunggah data siswa', { id: 'uploading' })
+        toast.success('Berhasil sinkronisasi data siswa', { id: 'uploading' })
         fetchStudents()
       } catch (err) {
         console.error(err)
