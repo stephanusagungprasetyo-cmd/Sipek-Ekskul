@@ -24,8 +24,12 @@ const NavItem = ({ to, icon: Icon, children, isCollapsed }) => (
     `}
     title={isCollapsed ? children : ''}
   >
-    <Icon size={20} className={`${isActive ? 'scale-110' : 'group-hover:scale-110'} transition-transform`} />
-    {!isCollapsed && <span className="font-semibold text-sm tracking-wide">{children}</span>}
+    {({ isActive }) => (
+      <>
+        <Icon size={20} className={`${isActive ? 'scale-110' : 'group-hover:scale-110'} transition-transform`} />
+        {!isCollapsed && <span className="font-semibold text-sm tracking-wide">{children}</span>}
+      </>
+    )}
   </NavLink>
 )
 
@@ -34,7 +38,6 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
 
   return (
     <aside className="h-full bg-white border-r border-slate-100 flex flex-col relative">
-      {/* Collapse Toggle Button (Desktop) */}
       <button 
         onClick={toggleCollapse}
         className="absolute -right-3 top-20 w-6 h-6 bg-white border border-slate-100 rounded-full hidden lg:flex items-center justify-center text-slate-400 hover:text-primary-600 hover:border-primary-100 shadow-sm z-50 transition-all"
@@ -42,7 +45,6 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
         {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
 
-      {/* Logo Section */}
       <div className={`p-6 mb-2 ${isCollapsed ? 'flex justify-center' : ''}`}>
         <div className="flex items-center gap-3 text-primary-600">
           <div className="w-10 h-10 bg-primary-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-primary-100 shrink-0">
@@ -57,7 +59,6 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
         </div>
       </div>
       
-      {/* Navigation */}
       <nav className="flex-1 px-3 space-y-1">
         <NavItem to="/" icon={LayoutDashboard} isCollapsed={isCollapsed}>Dashboard</NavItem>
         
@@ -80,7 +81,6 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
         )}
       </nav>
       
-      {/* Bottom Profile/Logout */}
       <div className="p-4 mt-auto">
         {isCollapsed ? (
           <button 
