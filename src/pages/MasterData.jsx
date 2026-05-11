@@ -81,26 +81,52 @@ export default function MasterData() {
           const p1Id = await getEkskulId(p1Name)
           const p2Id = await getEkskulId(p2Name)
 
-          // 1. Insert Student
-          const { data: student, error: studentError } = await supabase
+          // 1. Check if student exists (De-duplication)
+          const { data: existingStudent } = await supabase
             .from('students')
-            .insert({
-              name: studentName,
-              gender: gender === 'P' || gender?.toLowerCase().includes('perempuan') ? 'P' : 'L',
-              class_name: className || '-',
-              wajib_id: wajibId,
-              pilihan_1_id: p1Id,
-              pilihan_2_id: p2Id
-            })
             .select('id')
+            .ilike('name', studentName.trim())
             .single()
 
-          if (student && !studentError) {
-            // 2. Initialize Scores for each role
+          let studentId = existingStudent?.id
+
+          if (studentId) {
+            // Update existing student
+            await supabase
+              .from('students')
+              .update({
+                gender: gender === 'P' || gender?.toLowerCase().includes('perempuan') ? 'P' : 'L',
+                class_name: className || '-',
+                wajib_id: wajibId,
+                pilihan_1_id: p1Id,
+                pilihan_2_id: p2Id
+              })
+              .eq('id', studentId)
+          } else {
+            // Insert new student
+            const { data: newStudent } = await supabase
+              .from('students')
+              .insert({
+                name: studentName.trim(),
+                gender: gender === 'P' || gender?.toLowerCase().includes('perempuan') ? 'P' : 'L',
+                class_name: className || '-',
+                wajib_id: wajibId,
+                pilihan_1_id: p1Id,
+                pilihan_2_id: p2Id
+              })
+              .select('id')
+              .single()
+            studentId = newStudent?.id
+          }
+
+          if (studentId) {
+            // 2. Refresh Scores: Delete old ones and insert new ones for assigned ekskuls
+            await supabase.from('scores').delete().eq('student_id', studentId)
+            
             const roles = [wajibId, p1Id, p2Id].filter(Boolean)
             for (const eid of roles) {
               await supabase.from('scores').insert({
-                student_id: student.id,
+                student_id: studentId,
                 extracurricular_id: eid
               })
             }

@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
-import { Search, Loader2, Download, Printer, Filter, Star } from 'lucide-react'
+import { Search, Loader2, Download, Printer, Filter, Star, FileSpreadsheet } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function KoordinatorDashboard() {
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedClass, setSelectedClass] = useState('Semua Kelas')
+  const [classes, setClasses] = useState([])
 
   useEffect(() => {
     fetchData()
@@ -14,7 +17,6 @@ export default function KoordinatorDashboard() {
 
   async function fetchData() {
     setLoading(true)
-    // Fetch students with their 3 possible ekskuls
     const { data: students, error } = await supabase
       .from('students')
       .select(`
@@ -30,6 +32,8 @@ export default function KoordinatorDashboard() {
       toast.error('Gagal mengambil data rekap')
     } else {
       setData(students || [])
+      const uniqueClasses = ['Semua Kelas', ...new Set((students || []).map(s => s.class_name))]
+      setClasses(uniqueClasses)
     }
     setLoading(false)
   }
@@ -39,19 +43,40 @@ export default function KoordinatorDashboard() {
     return student.scores.find(s => s.extracurricular_id === ekskulId)
   }
 
-  const renderScore = (score) => {
+  const getGradeStr = (score) => {
     if (!score) return '-'
-    // We'll show the average_score or just the grade
     const avg = score.average_score || 0
-    if (avg >= 86) return <span className="text-green-600 font-bold">A</span>
-    if (avg >= 71) return <span className="text-blue-600 font-bold">B</span>
-    return <span className="text-slate-400">C</span>
+    if (avg >= 86) return 'A'
+    if (avg >= 71) return 'B'
+    return 'C'
   }
 
-  const filteredData = data.filter(student => 
-    student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.class_name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const exportToExcel = () => {
+    const reportData = filteredData.map((s, idx) => ({
+      'No': idx + 1,
+      'Nama Siswa': s.name,
+      'Kelas': s.class_name,
+      'Ekskul Wajib': s.wajib?.name || '-',
+      'Nilai Wajib': getGradeStr(getScoreForEkskul(s, s.wajib?.id)),
+      'Ekskul Pilihan 1': s.pilihan1?.name || '-',
+      'Nilai Pilihan 1': getGradeStr(getScoreForEkskul(s, s.pilihan1?.id)),
+      'Ekskul Pilihan 2': s.pilihan2?.name || '-',
+      'Nilai Pilihan 2': getGradeStr(getScoreForEkskul(s, s.pilihan2?.id)),
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(reportData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap Nilai")
+    const fileName = `Rekap_Nilai_${selectedClass.replace(' ', '_')}_${new Date().toLocaleDateString()}.xlsx`
+    XLSX.writeFile(wb, fileName)
+    toast.success(`Berhasil mengekspor data ${selectedClass}`)
+  }
+
+  const filteredData = data.filter(student => {
+    const matchSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchClass = selectedClass === 'Semua Kelas' || student.class_name === selectedClass
+    return matchSearch && matchClass
+  })
 
   return (
     <div className="space-y-8">
@@ -61,8 +86,8 @@ export default function KoordinatorDashboard() {
           <p className="text-slate-500 mt-1">Laporan menyeluruh nilai wajib dan pilihan siswa.</p>
         </div>
 
-        <div className="flex gap-3">
-          <div className="relative w-full md:w-80">
+        <div className="flex flex-wrap gap-3">
+          <div className="relative w-full md:w-64">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input
               type="text"
@@ -72,9 +97,21 @@ export default function KoordinatorDashboard() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button className="btn btn-secondary flex items-center gap-2">
-            <Printer size={18} />
-            Cetak
+          
+          <select 
+            className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary-500 transition-all shadow-sm"
+            value={selectedClass}
+            onChange={(e) => setSelectedClass(e.target.value)}
+          >
+            {classes.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <button 
+            onClick={exportToExcel}
+            className="btn btn-primary flex items-center gap-2"
+          >
+            <Download size={18} />
+            Ekspor Excel
           </button>
         </div>
       </div>
@@ -88,8 +125,8 @@ export default function KoordinatorDashboard() {
           </div>
         </div>
         <div className="card border-slate-100 bg-white">
-          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Total Siswa</p>
-          <h3 className="text-3xl font-bold text-slate-800 mt-1">{data.length}</h3>
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Siswa Terfilter</p>
+          <h3 className="text-3xl font-bold text-slate-800 mt-1">{filteredData.length}</h3>
         </div>
       </div>
 
@@ -130,15 +167,27 @@ export default function KoordinatorDashboard() {
                     
                     {/* Wajib */}
                     <td className="text-[11px] font-semibold text-slate-600">{student.wajib?.name || '-'}</td>
-                    <td className="text-center font-black">{renderScore(sWajib)}</td>
+                    <td className="text-center font-black">
+                      {getGradeStr(sWajib) !== '-' ? (
+                        <span className={`text-${getGradeStr(sWajib) === 'A' ? 'green' : 'blue'}-600`}>{getGradeStr(sWajib)}</span>
+                      ) : '-'}
+                    </td>
                     
                     {/* P1 */}
                     <td className="text-[11px] font-semibold text-slate-600">{student.pilihan1?.name || '-'}</td>
-                    <td className="text-center font-black">{renderScore(sP1)}</td>
+                    <td className="text-center font-black">
+                      {getGradeStr(sP1) !== '-' ? (
+                        <span className={`text-${getGradeStr(sP1) === 'A' ? 'green' : 'blue'}-600`}>{getGradeStr(sP1)}</span>
+                      ) : '-'}
+                    </td>
                     
                     {/* P2 */}
                     <td className="text-[11px] font-semibold text-slate-600">{student.pilihan2?.name || '-'}</td>
-                    <td className="text-center font-black">{renderScore(sP2)}</td>
+                    <td className="text-center font-black">
+                      {getGradeStr(sP2) !== '-' ? (
+                        <span className={`text-${getGradeStr(sP2) === 'A' ? 'green' : 'blue'}-600`}>{getGradeStr(sP2)}</span>
+                      ) : '-'}
+                    </td>
                   </tr>
                 )
               })}
