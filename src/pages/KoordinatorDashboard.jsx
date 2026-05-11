@@ -52,17 +52,19 @@ export default function KoordinatorDashboard() {
   }
 
   const exportToExcel = () => {
-    const reportData = filteredData.map((s, idx) => ({
-      'No': idx + 1,
-      'Nama Siswa': s.name,
-      'Kelas': s.class_name,
-      'Ekskul Wajib': s.wajib?.name || '-',
-      'Nilai Wajib': getGradeStr(getScoreForEkskul(s, s.wajib?.id)),
-      'Ekskul Pilihan 1': s.pilihan1?.name || '-',
-      'Nilai Pilihan 1': getGradeStr(getScoreForEkskul(s, s.pilihan1?.id)),
-      'Ekskul Pilihan 2': s.pilihan2?.name || '-',
-      'Nilai Pilihan 2': getGradeStr(getScoreForEkskul(s, s.pilihan2?.id)),
-    }))
+    const reportData = filteredData
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((s, idx) => ({
+        'No': idx + 1,
+        'Nama Siswa': s.name,
+        'Kelas': s.class_name,
+        'Ekskul Wajib': s.wajib?.name || '-',
+        'Nilai Wajib': getGradeStr(getScoreForEkskul(s, s.wajib?.id)),
+        'Ekskul Pilihan 1': s.pilihan1?.name || '-',
+        'Nilai Pilihan 1': getGradeStr(getScoreForEkskul(s, s.pilihan1?.id)),
+        'Ekskul Pilihan 2': s.pilihan2?.name || '-',
+        'Nilai Pilihan 2': getGradeStr(getScoreForEkskul(s, s.pilihan2?.id)),
+      }))
 
     const ws = XLSX.utils.json_to_sheet(reportData)
     const wb = XLSX.utils.book_new()

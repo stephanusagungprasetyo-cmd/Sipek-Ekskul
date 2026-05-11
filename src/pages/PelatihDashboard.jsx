@@ -7,13 +7,22 @@ import toast from 'react-hot-toast'
 const ATTENDANCE_VALUES = ['', 'O', 'I', 'A', 'S']
 
 const calculateAverage = (item) => {
+  // 1. Attendance Score (Present / Total Filled) * 100
+  const attendanceFields = [...Array(12)].map((_, i) => item[`att_${i+1}`])
+  const filledAttendance = attendanceFields.filter(v => v && v !== '')
+  const presentCount = filledAttendance.filter(v => v === 'O').length
+  const attScore = filledAttendance.length > 0 ? (presentCount / filledAttendance.length) * 100 : 0
+
+  // 2. Practice Score (Average of non-null)
   const practices = [item.prac_1, item.prac_2, item.prac_3, item.prac_4, item.prac_5].filter(v => v !== null && v !== '')
-  const knowledge = [item.know_1, item.know_2, item.know_3].filter(v => v !== null && v !== '')
-  if (practices.length === 0 && knowledge.length === 0) return 0
   const pAvg = practices.length > 0 ? practices.reduce((a, b) => a + parseFloat(b), 0) / practices.length : 0
+  
+  // 3. Knowledge Score (Average of non-null)
+  const knowledge = [item.know_1, item.know_2, item.know_3].filter(v => v !== null && v !== '')
   const kAvg = knowledge.length > 0 ? knowledge.reduce((a, b) => a + parseFloat(b), 0) / knowledge.length : 0
-  if (practices.length > 0 && knowledge.length > 0) return (pAvg + kAvg) / 2
-  return pAvg || kAvg
+  
+  // 4. Final Score = (Att + Prac + Know) / 3
+  return (attScore + pAvg + kAvg) / 3
 }
 
 const getGrade = (score) => {

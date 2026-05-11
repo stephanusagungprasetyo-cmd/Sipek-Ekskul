@@ -5,67 +5,103 @@ import {
   PenTool, 
   Users, 
   FileText,
-  School
+  School,
+  ChevronLeft,
+  ChevronRight,
+  LogOut
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
-const NavItem = ({ to, icon: Icon, children }) => (
+const NavItem = ({ to, icon: Icon, children, isCollapsed }) => (
   <NavLink
     to={to}
     className={({ isActive }) => `
-      flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200
+      flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group
       ${isActive 
-        ? 'bg-primary-500 text-white shadow-lg shadow-primary-200' 
+        ? 'bg-primary-600 text-white shadow-lg shadow-primary-200' 
         : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}
+      ${isCollapsed ? 'justify-center px-2' : ''}
     `}
+    title={isCollapsed ? children : ''}
   >
-    <Icon size={20} />
-    <span className="font-medium">{children}</span>
+    <Icon size={20} className={`${isActive ? 'scale-110' : 'group-hover:scale-110'} transition-transform`} />
+    {!isCollapsed && <span className="font-semibold text-sm tracking-wide">{children}</span>}
   </NavLink>
 )
 
-export default function Sidebar() {
-  const { profile } = useAuthStore()
+export default function Sidebar({ isCollapsed, toggleCollapse }) {
+  const { profile, logout } = useAuthStore()
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-100 flex flex-col flex-shrink-0">
-      <div className="p-8">
-        <div className="flex items-center gap-3 text-primary-600 mb-2">
-          <div className="w-10 h-10 bg-primary-50 rounded-xl flex items-center justify-center">
+    <aside className="h-full bg-white border-r border-slate-100 flex flex-col relative">
+      {/* Collapse Toggle Button (Desktop) */}
+      <button 
+        onClick={toggleCollapse}
+        className="absolute -right-3 top-20 w-6 h-6 bg-white border border-slate-100 rounded-full hidden lg:flex items-center justify-center text-slate-400 hover:text-primary-600 hover:border-primary-100 shadow-sm z-50 transition-all"
+      >
+        {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+      </button>
+
+      {/* Logo Section */}
+      <div className={`p-6 mb-2 ${isCollapsed ? 'flex justify-center' : ''}`}>
+        <div className="flex items-center gap-3 text-primary-600">
+          <div className="w-10 h-10 bg-primary-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-primary-100 shrink-0">
             <School size={24} />
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-800">SIPEK</h1>
+          {!isCollapsed && (
+            <div>
+              <h1 className="text-xl font-black tracking-tighter text-slate-800 leading-none">SIPEK</h1>
+              <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mt-1">SYSTEM</p>
+            </div>
+          )}
         </div>
-        <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold px-1">
-          Ekskul Management
-        </p>
       </div>
       
-      <nav className="flex-1 px-4 space-y-2">
-        <NavItem to="/" icon={LayoutDashboard}>Dashboard</NavItem>
+      {/* Navigation */}
+      <nav className="flex-1 px-3 space-y-1">
+        <NavItem to="/" icon={LayoutDashboard} isCollapsed={isCollapsed}>Dashboard</NavItem>
+        
+        <div className={`my-4 border-t border-slate-50 mx-2 ${isCollapsed ? 'hidden' : ''}`} />
         
         {profile?.role === 'master_data' && (
-          <NavItem to="/master-data" icon={Database}>Master Data</NavItem>
+          <NavItem to="/master-data" icon={Database} isCollapsed={isCollapsed}>Master Data</NavItem>
         )}
         
         {profile?.role === 'pelatih' && (
-          <NavItem to="/pelatih" icon={PenTool}>Input Nilai</NavItem>
+          <NavItem to="/pelatih" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
         )}
         
         {profile?.role === 'pendamping' && (
-          <NavItem to="/pendamping" icon={Users}>Data Siswa</NavItem>
+          <NavItem to="/pendamping" icon={Users} isCollapsed={isCollapsed}>Monitoring</NavItem>
         )}
         
         {profile?.role === 'koordinator' && (
-          <NavItem to="/koordinator" icon={FileText}>Rekap Nilai</NavItem>
+          <NavItem to="/koordinator" icon={FileText} isCollapsed={isCollapsed}>Rekap Nilai</NavItem>
         )}
       </nav>
       
-      <div className="p-6 mt-auto">
-        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-          <p className="text-xs text-slate-400 mb-1">Versi Aplikasi</p>
-          <p className="text-sm font-semibold text-slate-600">v1.0.0 Stable</p>
-        </div>
+      {/* Bottom Profile/Logout */}
+      <div className="p-4 mt-auto">
+        {isCollapsed ? (
+          <button 
+            onClick={logout}
+            className="w-full h-12 flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all"
+            title="Keluar"
+          >
+            <LogOut size={20} />
+          </button>
+        ) : (
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Versi 1.1.0</p>
+            <button 
+              onClick={logout}
+              className="w-full py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-600 hover:border-red-100 transition-all flex items-center justify-center gap-2"
+            >
+              <LogOut size={16} />
+              Keluar
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   )
