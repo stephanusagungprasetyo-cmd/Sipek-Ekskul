@@ -16,7 +16,10 @@ export const useAuthStore = create(
       login: async (username, password) => {
         set({ loading: true })
         // Map simple username to email for Supabase Auth
-        const email = `${username}@sipek.local`
+        // admin uses @sipek.local, others use @sipek.com (since client-side signUp rejects .local)
+        const email = username.toLowerCase() === 'admin'
+          ? 'admin@sipek.local'
+          : `${username.toLowerCase()}@sipek.com`
         
         const { data, error } = await supabase.auth.signInWithPassword({
           email,

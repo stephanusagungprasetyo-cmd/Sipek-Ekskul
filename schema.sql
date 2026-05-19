@@ -23,6 +23,7 @@ CREATE TABLE students (
   wajib_id UUID REFERENCES extracurriculars(id) ON DELETE SET NULL,
   pilihan_1_id UUID REFERENCES extracurriculars(id) ON DELETE SET NULL,
   pilihan_2_id UUID REFERENCES extracurriculars(id) ON DELETE SET NULL,
+  pilihan_3_id UUID REFERENCES extracurriculars(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 

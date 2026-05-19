@@ -25,6 +25,7 @@ export default function KoordinatorDashboard() {
         wajib:extracurriculars!wajib_id(id, name),
         pilihan1:extracurriculars!pilihan_1_id(id, name),
         pilihan2:extracurriculars!pilihan_2_id(id, name),
+        pilihan3:extracurriculars!pilihan_3_id(id, name),
         scores(*)
       `)
 
@@ -90,6 +91,8 @@ export default function KoordinatorDashboard() {
         'Nilai Pilihan 1': getGradeStr(getScoreForEkskul(s, s.pilihan1?.id)),
         'Ekskul Pilihan 2': s.pilihan2?.name || '-',
         'Nilai Pilihan 2': getGradeStr(getScoreForEkskul(s, s.pilihan2?.id)),
+        'Ekskul Pilihan 3': s.pilihan3?.name || '-',
+        'Nilai Pilihan 3': getGradeStr(getScoreForEkskul(s, s.pilihan3?.id)),
       }))
 
     const ws = XLSX.utils.json_to_sheet(reportData)
@@ -158,8 +161,10 @@ export default function KoordinatorDashboard() {
                 <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-indigo-50/30 text-indigo-700">Ekskul Wajib</th>
                 <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-amber-50/30 text-amber-700">Pilihan 1</th>
                 <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-teal-50/30 text-teal-700">Pilihan 2</th>
+                <th colSpan="2" className="text-center border-b border-slate-100 py-2 bg-rose-50/30 text-rose-700">Pilihan 3</th>
               </tr>
               <tr className="bg-slate-50/50">
+                <th className="text-xs text-slate-400">Nama</th><th className="text-xs text-slate-400 w-16">Nilai</th>
                 <th className="text-xs text-slate-400">Nama</th><th className="text-xs text-slate-400 w-16">Nilai</th>
                 <th className="text-xs text-slate-400">Nama</th><th className="text-xs text-slate-400 w-16">Nilai</th>
                 <th className="text-xs text-slate-400">Nama</th><th className="text-xs text-slate-400 w-16">Nilai</th>
@@ -170,6 +175,7 @@ export default function KoordinatorDashboard() {
                 const sWajib = getScoreForEkskul(student, student.wajib?.id)
                 const sP1 = getScoreForEkskul(student, student.pilihan1?.id)
                 const sP2 = getScoreForEkskul(student, student.pilihan2?.id)
+                const sP3 = getScoreForEkskul(student, student.pilihan3?.id)
 
                 return (
                   <tr key={student.id}>
@@ -195,6 +201,13 @@ export default function KoordinatorDashboard() {
                     <td className="text-center font-black">
                       {getGradeStr(sP2) !== '-' ? (
                         <span className={`text-${getGradeStr(sP2) === 'A' ? 'green' : 'blue'}-600`}>{getGradeStr(sP2)}</span>
+                      ) : '-'}
+                    </td>
+                    
+                    <td className="text-[11px] font-semibold text-slate-600">{student.pilihan3?.name || '-'}</td>
+                    <td className="text-center font-black">
+                      {getGradeStr(sP3) !== '-' ? (
+                        <span className={`text-${getGradeStr(sP3) === 'A' ? 'green' : 'blue'}-600`}>{getGradeStr(sP3)}</span>
                       ) : '-'}
                     </td>
                   </tr>

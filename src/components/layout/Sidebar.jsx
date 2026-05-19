@@ -65,7 +65,10 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
         <div className={`my-4 border-t border-slate-50 mx-2 ${isCollapsed ? 'hidden' : ''}`} />
         
         {profile?.role === 'master_data' && (
-          <NavItem to="/master-data" icon={Database} isCollapsed={isCollapsed}>Master Data</NavItem>
+          <>
+            <NavItem to="/master-data" icon={Database} isCollapsed={isCollapsed}>Master Data</NavItem>
+            <NavItem to="/management-user" icon={Users} isCollapsed={isCollapsed}>Management User</NavItem>
+          </>
         )}
         
         {profile?.role === 'pelatih' && (

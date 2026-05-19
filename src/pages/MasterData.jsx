@@ -47,7 +47,8 @@ export default function MasterData() {
         *,
         wajib:extracurriculars!wajib_id(id, name),
         pilihan1:extracurriculars!pilihan_1_id(id, name),
-        pilihan2:extracurriculars!pilihan_2_id(id, name)
+        pilihan2:extracurriculars!pilihan_2_id(id, name),
+        pilihan3:extracurriculars!pilihan_3_id(id, name)
       `)
     
     if (error) {
@@ -56,6 +57,52 @@ export default function MasterData() {
       setStudents(data || [])
     }
     setLoading(false)
+  }
+
+  const handleExportExcel = () => {
+    try {
+      if (students.length === 0) {
+        toast.error('Tidak ada data siswa untuk diekspor')
+        return
+      }
+
+      // Format data for Excel
+      const excelData = students.map((student, idx) => ({
+        'No': idx + 1,
+        'Nama Siswa': student.name,
+        'JK': student.gender,
+        'Kelas': student.class_name,
+        'Ekskul Wajib': student.wajib?.name || '-',
+        'Ekskul Pilihan 1': student.pilihan1?.name || '-',
+        'Ekskul Pilihan 2': student.pilihan2?.name || '-',
+        'Ekskul Pilihan 3': student.pilihan3?.name || '-'
+      }))
+
+      // Create sheet and workbook
+      const worksheet = XLSX.utils.json_to_sheet(excelData)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Data Siswa')
+
+      // Set column widths
+      const max_author = excelData.reduce((w, r) => Math.max(w, r['Nama Siswa'].length), 10)
+      worksheet['!cols'] = [
+        { wch: 5 },  // No
+        { wch: max_author + 5 }, // Nama Siswa
+        { wch: 6 },  // JK
+        { wch: 10 }, // Kelas
+        { wch: 20 }, // Ekskul Wajib
+        { wch: 20 }, // Ekskul Pilihan 1
+        { wch: 20 }, // Ekskul Pilihan 2
+        { wch: 20 }  // Ekskul Pilihan 3
+      ]
+
+      // Download file
+      XLSX.writeFile(workbook, 'Master_Data_Siswa.xlsx')
+      toast.success('Data siswa berhasil diekspor ke Excel!')
+    } catch (err) {
+      console.error(err)
+      toast.error('Gagal mengekspor data: ' + err.message)
+    }
   }
 
   const handleFileUpload = async (e) => {
@@ -91,7 +138,8 @@ export default function MasterData() {
             let updatePayload = {}
             if (isWajib) updatePayload.wajib_id = eksData.id
             else if (!exist.pilihan_1_id) updatePayload.pilihan_1_id = eksData.id
-            else updatePayload.pilihan_2_id = eksData.id
+            else if (!exist.pilihan_2_id) updatePayload.pilihan_2_id = eksData.id
+            else updatePayload.pilihan_3_id = eksData.id
             await supabase.from('students').update(updatePayload).eq('id', exist.id)
             await supabase.from('scores').upsert({ student_id: exist.id, extracurricular_id: eksData.id }, { onConflict: 'student_id,extracurricular_id' })
           } else {
@@ -116,7 +164,8 @@ export default function MasterData() {
       ...student,
       wajib_id: student.wajib_id || '',
       pilihan_1_id: student.pilihan_1_id || '',
-      pilihan_2_id: student.pilihan_2_id || ''
+      pilihan_2_id: student.pilihan_2_id || '',
+      pilihan_3_id: student.pilihan_3_id || ''
     })
     setShowModal(true)
   }
@@ -132,7 +181,8 @@ export default function MasterData() {
         class_name: editingStudent.class_name,
         wajib_id: editingStudent.wajib_id || null,
         pilihan_1_id: editingStudent.pilihan_1_id || null,
-        pilihan_2_id: editingStudent.pilihan_2_id || null
+        pilihan_2_id: editingStudent.pilihan_2_id || null,
+        pilihan_3_id: editingStudent.pilihan_3_id || null
       })
       .eq('id', editingStudent.id)
 
@@ -140,7 +190,12 @@ export default function MasterData() {
       toast.error('Gagal memperbarui data')
     } else {
       // Ensure scores exist for the selected ekskuls
-      const ids = [editingStudent.wajib_id, editingStudent.pilihan_1_id, editingStudent.pilihan_2_id].filter(Boolean)
+      const ids = [
+        editingStudent.wajib_id, 
+        editingStudent.pilihan_1_id, 
+        editingStudent.pilihan_2_id,
+        editingStudent.pilihan_3_id
+      ].filter(Boolean)
       for (const eid of ids) {
         await supabase.from('scores').upsert({ student_id: editingStudent.id, extracurricular_id: eid }, { onConflict: 'student_id,extracurricular_id' })
       }
@@ -205,6 +260,14 @@ export default function MasterData() {
             <span className="hidden sm:inline">{isUploading ? 'Mengunggah...' : 'Upload Excel'}</span>
             <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
           </label>
+
+          <button
+            onClick={handleExportExcel}
+            className="btn bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2"
+          >
+            <FileSpreadsheet size={18} />
+            <span className="hidden sm:inline">Export Excel</span>
+          </button>
         </div>
       </div>
 
@@ -230,6 +293,7 @@ export default function MasterData() {
                   <th>Wajib</th>
                   <th>Pilihan 1</th>
                   <th>Pilihan 2</th>
+                  <th>Pilihan 3</th>
                   <th className="w-24 text-center">Aksi</th>
                 </tr>
               </thead>
@@ -243,6 +307,7 @@ export default function MasterData() {
                     <td><EkskulBadge name={student.wajib?.name} color="indigo" /></td>
                     <td><EkskulBadge name={student.pilihan1?.name} color="amber" /></td>
                     <td><EkskulBadge name={student.pilihan2?.name} color="teal" /></td>
+                    <td><EkskulBadge name={student.pilihan3?.name} color="rose" /></td>
                     <td>
                       <div className="flex items-center justify-center gap-2">
                         <button onClick={() => handleEdit(student)} className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all"><Edit3 size={16} /></button>
@@ -296,6 +361,10 @@ export default function MasterData() {
                   <label className="block text-sm font-bold text-slate-700 mb-2">Ekskul Pilihan 2</label>
                   <EkskulSelect value={editingStudent.pilihan_2_id} ekskuls={ekskuls} onChange={(val) => setEditingStudent({...editingStudent, pilihan_2_id: val})} />
                 </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Ekskul Pilihan 3</label>
+                  <EkskulSelect value={editingStudent.pilihan_3_id} ekskuls={ekskuls} onChange={(val) => setEditingStudent({...editingStudent, pilihan_3_id: val})} />
+                </div>
               </div>
               <div className="pt-4">
                 <button type="submit" disabled={loading} className="w-full btn btn-primary py-4 flex items-center justify-center gap-2">
@@ -316,7 +385,8 @@ function EkskulBadge({ name, color }) {
   const colors = {
     indigo: 'bg-indigo-50 text-indigo-600',
     amber: 'bg-amber-50 text-amber-600',
-    teal: 'bg-teal-50 text-teal-600'
+    teal: 'bg-teal-50 text-teal-600',
+    rose: 'bg-rose-50 text-rose-600'
   }
   return (
     <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${colors[color]}`}>

@@ -6,6 +6,7 @@ import DashboardLayout from './components/layout/DashboardLayout'
 // Pages
 import Login from './pages/Login'
 import MasterData from './pages/MasterData'
+import ManagementUser from './pages/ManagementUser'
 import PelatihDashboard from './pages/PelatihDashboard'
 import PendampingDashboard from './pages/PendampingDashboard'
 import KoordinatorDashboard from './pages/KoordinatorDashboard'
@@ -55,6 +56,12 @@ function App() {
           <Route path="/master-data" element={
             <ProtectedRoute allowedRoles={['master_data']}>
               <MasterData />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/management-user" element={
+            <ProtectedRoute allowedRoles={['master_data']}>
+              <ManagementUser />
             </ProtectedRoute>
           } />
           
