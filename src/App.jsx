@@ -31,7 +31,7 @@ const HomeRedirect = () => {
   
   switch (profile.role) {
     case 'master_data': return <Navigate to="/master-data" />
-    case 'pelatih': return <Navigate to="/pelatih" />
+    case 'pelatih': return <Navigate to="/input-nilai" />
     case 'pendamping': return <Navigate to="/pendamping" />
     case 'koordinator': return <Navigate to="/koordinator" />
     default: return <Navigate to="/login" />
@@ -65,8 +65,8 @@ function App() {
             </ProtectedRoute>
           } />
           
-          <Route path="/pelatih" element={
-            <ProtectedRoute allowedRoles={['pelatih']}>
+          <Route path="/input-nilai" element={
+            <ProtectedRoute allowedRoles={['pelatih', 'pendamping']}>
               <PelatihDashboard />
             </ProtectedRoute>
           } />

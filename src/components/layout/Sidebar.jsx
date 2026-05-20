@@ -72,11 +72,14 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
         )}
         
         {profile?.role === 'pelatih' && (
-          <NavItem to="/pelatih" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
+          <NavItem to="/input-nilai" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
         )}
         
         {profile?.role === 'pendamping' && (
-          <NavItem to="/pendamping" icon={Users} isCollapsed={isCollapsed}>Monitoring</NavItem>
+          <>
+            <NavItem to="/pendamping" icon={Users} isCollapsed={isCollapsed}>Monitoring</NavItem>
+            <NavItem to="/input-nilai" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
+          </>
         )}
         
         {profile?.role === 'koordinator' && (
