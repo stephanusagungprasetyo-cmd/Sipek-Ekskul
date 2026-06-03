@@ -68,9 +68,28 @@ export default function PelatihDashboard() {
   }, [fetchData])
 
   const handleUpdate = async (id, field, value) => {
-    setData(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
-    const { error } = await supabase.from('scores').update({ [field]: value }).eq('id', id)
-    if (error) toast.error('Gagal menyimpan')
+    let updatedItem;
+    setData(prev => {
+      return prev.map(item => {
+        if (item.id === id) {
+          updatedItem = { ...item, [field]: value };
+          return updatedItem;
+        }
+        return item;
+      });
+    });
+
+    const currentItem = data.find(item => item.id === id);
+    if (!currentItem) return;
+    const tempItem = { ...currentItem, [field]: value };
+    const avg = calculateAverage(tempItem);
+
+    const dbValue = (value === '' || value === undefined) ? null : value;
+    const { error } = await supabase.from('scores').update({ 
+      [field]: dbValue, 
+      average_score: avg 
+    }).eq('id', id);
+    if (error) toast.error('Gagal menyimpan');
   }
 
   const cycleAttendance = (id, field, current) => {
@@ -83,20 +102,70 @@ export default function PelatihDashboard() {
     if (!selectedEkskul) return toast.error('Pilih Ekskul terlebih dahulu')
     setLoading(true)
     try {
-      let { data: student } = await supabase.from('students').select('id').ilike('name', newStudent.name).single()
+      const WAJIB_LIST = ['pramuka', 'pmr', 'dewan galang', 'paskibra']
+      const ekskul = ekskuls.find(e => e.id === selectedEkskul)
+      const ekskulName = ekskul ? ekskul.name : ''
+      const isWajib = WAJIB_LIST.includes(ekskulName.toLowerCase())
+
+      let { data: student } = await supabase.from('students').select('*').ilike('name', newStudent.name).single()
+      
       if (!student) {
         const { data: created, error: sErr } = await supabase.from('students').insert({
-          name: newStudent.name, gender: newStudent.gender, class_name: newStudent.class_name, pilihan_1_id: selectedEkskul
-        }).select('id').single()
+          name: newStudent.name,
+          gender: newStudent.gender,
+          class_name: newStudent.class_name,
+          [isWajib ? 'wajib_id' : 'pilihan_1_id']: selectedEkskul
+        }).select('*').single()
         if (sErr) throw sErr
         student = created
+      } else {
+        // Cek apakah siswa sudah terasosiasi dengan ekskul ini di tabel students
+        const isAlreadyAssigned = 
+          student.wajib_id === selectedEkskul ||
+          student.pilihan_1_id === selectedEkskul ||
+          student.pilihan_2_id === selectedEkskul ||
+          student.pilihan_3_id === selectedEkskul
+
+        if (!isAlreadyAssigned) {
+          let updatePayload = {}
+          if (isWajib) {
+            updatePayload.wajib_id = selectedEkskul
+          } else if (!student.pilihan_1_id) {
+            updatePayload.pilihan_1_id = selectedEkskul
+          } else if (!student.pilihan_2_id) {
+            updatePayload.pilihan_2_id = selectedEkskul
+          } else if (!student.pilihan_3_id) {
+            updatePayload.pilihan_3_id = selectedEkskul
+          }
+          
+          if (Object.keys(updatePayload).length > 0) {
+            const { error: uErr } = await supabase.from('students').update(updatePayload).eq('id', student.id)
+            if (uErr) throw uErr
+          }
+        }
       }
-      await supabase.from('scores').insert({ student_id: student.id, extracurricular_id: selectedEkskul })
+
+      // Pastikan data scores tidak ganda
+      const { data: existingScore } = await supabase
+        .from('scores')
+        .select('id')
+        .eq('student_id', student.id)
+        .eq('extracurricular_id', selectedEkskul)
+        .maybeSingle()
+
+      if (!existingScore) {
+        const { error: scoreErr } = await supabase
+          .from('scores')
+          .insert({ student_id: student.id, extracurricular_id: selectedEkskul })
+        if (scoreErr) throw scoreErr
+      }
+
       toast.success('Siswa berhasil ditambahkan')
       setShowAddModal(false)
       setNewStudent({ name: '', gender: 'L', class_name: '' })
       fetchData()
     } catch (err) {
+      console.error(err)
       toast.error('Gagal menambah siswa')
     } finally { setLoading(false) }
   }
