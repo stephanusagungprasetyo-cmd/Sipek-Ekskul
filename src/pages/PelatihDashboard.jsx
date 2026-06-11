@@ -15,7 +15,13 @@ const calculateAverage = (item) => {
   const pAvg = practices.length > 0 ? practices.reduce((a, b) => a + parseFloat(b), 0) / practices.length : 0
   const knowledge = [item.know_1, item.know_2, item.know_3].filter(v => v !== null && v !== '')
   const kAvg = knowledge.length > 0 ? knowledge.reduce((a, b) => a + parseFloat(b), 0) / knowledge.length : 0
-  return (attScore + pAvg + kAvg) / 3
+  
+  let activeCategories = 0
+  if (filledAttendance.length > 0) activeCategories++
+  if (practices.length > 0) activeCategories++
+  if (knowledge.length > 0) activeCategories++
+  
+  return activeCategories > 0 ? (attScore + pAvg + kAvg) / activeCategories : 0
 }
 
 const getGrade = (score) => {
@@ -67,34 +73,36 @@ export default function PelatihDashboard() {
     fetchData()
   }, [fetchData])
 
-  const handleUpdate = async (id, field, value) => {
-    let updatedItem;
-    setData(prev => {
-      return prev.map(item => {
-        if (item.id === id) {
-          updatedItem = { ...item, [field]: value };
-          return updatedItem;
-        }
-        return item;
-      });
-    });
+  const handleLocalChange = (id, field, value) => {
+    setData(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+  }
 
+  const handleSaveToDb = async (id, field, value) => {
     const currentItem = data.find(item => item.id === id);
     if (!currentItem) return;
+    
     const tempItem = { ...currentItem, [field]: value };
     const avg = calculateAverage(tempItem);
 
-    const dbValue = (value === '' || value === undefined) ? null : value;
+    const dbValue = (value === '' || value === undefined || value === null) ? null : value;
     const { error } = await supabase.from('scores').update({ 
       [field]: dbValue, 
       average_score: avg 
     }).eq('id', id);
+    
     if (error) toast.error('Gagal menyimpan');
   }
 
   const cycleAttendance = (id, field, current) => {
     const nextIdx = (ATTENDANCE_VALUES.indexOf(current || '') + 1) % ATTENDANCE_VALUES.length
-    handleUpdate(id, field, ATTENDANCE_VALUES[nextIdx])
+    const nextVal = ATTENDANCE_VALUES[nextIdx]
+    handleLocalChange(id, field, nextVal)
+    handleSaveToDb(id, field, nextVal)
   }
 
   const handleAddStudent = async (e) => {
@@ -242,9 +250,9 @@ export default function PelatihDashboard() {
                 <th className="w-24 text-center cursor-pointer" onClick={() => requestSort('class_name')}>
                   <div className="flex items-center gap-2">Kelas <ArrowUpDown size={14} /></div>
                 </th>
-                {viewMode === 'attendance' && [...Array(12)].map((_, i) => <th key={i} className="w-10 text-center px-1">{i+1}</th>)}
-                {viewMode === 'practice' && [...Array(5)].map((_, i) => <th key={i} className="w-16 text-center px-1">P-{i+1}</th>)}
-                {viewMode === 'knowledge' && [...Array(3)].map((_, i) => <th key={i} className="w-16 text-center px-1">U-{i+1}</th>)}
+                {viewMode === 'attendance' && [...Array(12)].map((_, i) => <th key={i} className="w-16 min-w-[64px] text-center px-1">{i+1}</th>)}
+                {viewMode === 'practice' && [...Array(5)].map((_, i) => <th key={i} className="w-28 min-w-[110px] text-center px-1">P-{i+1}</th>)}
+                {viewMode === 'knowledge' && [...Array(3)].map((_, i) => <th key={i} className="w-28 min-w-[110px] text-center px-1">U-{i+1}</th>)}
                 <th className="w-20 text-center">Rerata</th>
                 <th className="w-16 text-center">Grade</th>
               </tr>
@@ -262,19 +270,33 @@ export default function PelatihDashboard() {
                       const field = `att_${i+1}`
                       const val = item[field]
                       return (
-                        <td key={i} className="p-1">
-                          <button onClick={() => cycleAttendance(item.id, field, val)} className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black transition-all ${!val ? 'bg-slate-100 text-slate-300' : ''} ${val === 'O' ? 'bg-green-500 text-white' : ''} ${val === 'I' ? 'bg-blue-500 text-white' : ''} ${val === 'S' ? 'bg-amber-500 text-white' : ''} ${val === 'A' ? 'bg-red-500 text-white' : ''}`}>{val || '-'}</button>
+                        <td key={i} className="p-1 text-center">
+                          <div className="flex justify-center">
+                            <button onClick={() => cycleAttendance(item.id, field, val)} className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-black transition-all ${!val ? 'bg-slate-100 text-slate-300' : ''} ${val === 'O' ? 'bg-green-500 text-white' : ''} ${val === 'I' ? 'bg-blue-500 text-white' : ''} ${val === 'S' ? 'bg-amber-500 text-white' : ''} ${val === 'A' ? 'bg-red-500 text-white' : ''}`}>{val || '-'}</button>
+                          </div>
                         </td>
                       )
                     })}
                     {viewMode === 'practice' && [...Array(5)].map((_, i) => (
                       <td key={i} className="p-1">
-                        <input type="number" className="w-full h-9 bg-slate-50 border-0 rounded-lg text-center text-xs font-bold focus:ring-2 focus:ring-primary-500 transition-all outline-none" value={item[`prac_${i+1}`] || ''} onChange={(e) => handleUpdate(item.id, `prac_${i+1}`, e.target.value)} />
+                        <input 
+                          type="number" 
+                          className="w-full h-11 bg-slate-50 border-0 rounded-lg text-center text-sm font-bold focus:ring-2 focus:ring-primary-500 transition-all outline-none" 
+                          value={item[`prac_${i+1}`] === null || item[`prac_${i+1}`] === undefined ? '' : item[`prac_${i+1}`]} 
+                          onChange={(e) => handleLocalChange(item.id, `prac_${i+1}`, e.target.value)}
+                          onBlur={(e) => handleSaveToDb(item.id, `prac_${i+1}`, e.target.value)}
+                        />
                       </td>
                     ))}
                     {viewMode === 'knowledge' && [...Array(3)].map((_, i) => (
                       <td key={i} className="p-1">
-                        <input type="number" className="w-full h-9 bg-slate-50 border-0 rounded-lg text-center text-xs font-bold focus:ring-2 focus:ring-primary-500 transition-all outline-none" value={item[`know_${i+1}`] || ''} onChange={(e) => handleUpdate(item.id, `know_${i+1}`, e.target.value)} />
+                        <input 
+                          type="number" 
+                          className="w-full h-11 bg-slate-50 border-0 rounded-lg text-center text-sm font-bold focus:ring-2 focus:ring-primary-500 transition-all outline-none" 
+                          value={item[`know_${i+1}`] === null || item[`know_${i+1}`] === undefined ? '' : item[`know_${i+1}`]} 
+                          onChange={(e) => handleLocalChange(item.id, `know_${i+1}`, e.target.value)}
+                          onBlur={(e) => handleSaveToDb(item.id, `know_${i+1}`, e.target.value)}
+                        />
                       </td>
                     ))}
                     <td className="text-center font-bold text-slate-700">{Math.round(avg)}</td>

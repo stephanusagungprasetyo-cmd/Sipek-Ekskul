@@ -1,4 +1,4 @@
--- 1. Buat fungsi untuk menghitung average_score secara otomatis di database
+-- 1. Buat fungsi untuk menghitung average_score secara otomatis di database dengan pembagi kategori dinamis
 CREATE OR REPLACE FUNCTION calculate_average_score()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -15,6 +15,7 @@ DECLARE
   know_count INT := 0;
   know_sum NUMERIC := 0;
   
+  active_categories INT := 0;
   vals TEXT[];
   v TEXT;
 BEGIN
@@ -31,6 +32,7 @@ BEGIN
   END LOOP;
   IF att_count > 0 THEN
     att_score := (att_present::NUMERIC / att_count::NUMERIC) * 100;
+    active_categories := active_categories + 1;
   END IF;
 
   -- Hitung Nilai Praktik (prac_1 s.d prac_5)
@@ -41,6 +43,7 @@ BEGIN
   IF NEW.prac_5 IS NOT NULL THEN prac_sum := prac_sum + NEW.prac_5; prac_count := prac_count + 1; END IF;
   IF prac_count > 0 THEN
     prac_score := prac_sum / prac_count;
+    active_categories := active_categories + 1;
   END IF;
 
   -- Hitung Nilai Pengetahuan (know_1 s.d know_3)
@@ -49,10 +52,15 @@ BEGIN
   IF NEW.know_3 IS NOT NULL THEN know_sum := know_sum + NEW.know_3; know_count := know_count + 1; END IF;
   IF know_count > 0 THEN
     know_score := know_sum / know_count;
+    active_categories := active_categories + 1;
   END IF;
 
-  -- Rerata dari ketiganya
-  NEW.average_score := (att_score + prac_score + know_score) / 3;
+  -- Rerata dari kategori yang aktif saja
+  IF active_categories > 0 THEN
+    NEW.average_score := (att_score + prac_score + know_score) / active_categories;
+  ELSE
+    NEW.average_score := 0;
+  END IF;
   
   RETURN NEW;
 END;

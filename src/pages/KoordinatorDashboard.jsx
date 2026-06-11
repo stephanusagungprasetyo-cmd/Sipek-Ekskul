@@ -124,7 +124,13 @@ export default function KoordinatorDashboard() {
     const pAvg = practices.length > 0 ? practices.reduce((a, b) => a + parseFloat(b), 0) / practices.length : 0
     const knowledge = [item.know_1, item.know_2, item.know_3].filter(v => v !== null && v !== '')
     const kAvg = knowledge.length > 0 ? knowledge.reduce((a, b) => a + parseFloat(b), 0) / knowledge.length : 0
-    return (attScore + pAvg + kAvg) / 3
+    
+    let activeCategories = 0
+    if (filledAttendance.length > 0) activeCategories++
+    if (practices.length > 0) activeCategories++
+    if (knowledge.length > 0) activeCategories++
+    
+    return activeCategories > 0 ? (attScore + pAvg + kAvg) / activeCategories : 0
   }
 
   const getGradeStr = (score) => {
