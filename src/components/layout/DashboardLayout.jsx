@@ -44,7 +44,7 @@ export default function DashboardLayout() {
             </button>
             
             <div className="hidden sm:flex items-center gap-2 text-slate-500">
-              <span className="text-xs font-bold uppercase tracking-widest opacity-40">SIPEK</span>
+              <span className="text-xs font-bold uppercase tracking-widest opacity-40">SIP-EK</span>
               <span className="text-slate-300">/</span>
               <span className="text-sm font-bold text-slate-700 capitalize">{profile.role.replace('_', ' ')}</span>
             </div>

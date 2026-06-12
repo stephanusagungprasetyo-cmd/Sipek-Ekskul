@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { School, Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import logoUtama from '../assets/Logo_BPK_PENABURlogoutama.png'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -32,30 +33,40 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
-        <div className="p-10 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-50 text-primary-600 rounded-2xl mb-6">
-            <School size={32} />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-blue-950 to-black p-4 relative overflow-hidden">
+      {/* Glow effects */}
+      <div className="absolute w-96 h-96 rounded-full bg-primary-600/10 blur-3xl -top-20 -left-20" />
+      <div className="absolute w-96 h-96 rounded-full bg-blue-500/10 blur-3xl -bottom-20 -right-20" />
+
+      <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl shadow-black/30 border border-slate-100/80 overflow-hidden relative z-10">
+        <div className="pt-8 px-8 pb-4 text-center">
+          <div className="flex items-center justify-center mb-4">
+            <img 
+              src={logoUtama} 
+              alt="Logo BPK PENABUR" 
+              className="h-16 object-contain drop-shadow-sm"
+            />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">Selamat Datang</h1>
-          <p className="text-slate-400 mt-2">Silakan login untuk mengakses sistem SIPEK</p>
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight">SIP-EK</h1>
+          <p className="text-slate-500 text-xs mt-2 leading-relaxed">
+            Selamat Datang di Sistem Informasi Penilaian Ekskur SMPK 4 PENABUR! Silahkan login untuk mengakses.
+          </p>
         </div>
 
-        <div className="px-10 pb-10">
+        <div className="px-8 pb-8">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-600 text-sm">
-              <AlertCircle size={18} className="shrink-0 mt-0.5" />
+            <div className="mb-4 p-3.5 bg-red-50 border border-red-100 rounded-xl flex items-start gap-2.5 text-red-600 text-xs">
+              <AlertCircle size={16} className="shrink-0 mt-0.5" />
               <p>{error}</p>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Username</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Username</label>
               <input
                 type="text"
-                className="input-field"
+                className="input-field py-2 text-sm"
                 placeholder="Masukkan username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value.toLowerCase())}
@@ -64,10 +75,10 @@ export default function Login() {
             </div>
             
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Password</label>
               <input
                 type="password"
-                className="input-field"
+                className="input-field py-2 text-sm"
                 placeholder="Masukkan password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -78,11 +89,11 @@ export default function Login() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full btn btn-primary py-3.5 flex items-center justify-center gap-2 mt-4"
+              className="w-full btn btn-primary py-2.5 flex items-center justify-center gap-2 mt-2 text-sm"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 size={20} className="animate-spin" />
+                  <Loader2 size={18} className="animate-spin" />
                   Memproses...
                 </>
               ) : (
@@ -91,8 +102,8 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-8 pt-8 border-t border-slate-50 text-center">
-            <p className="text-xs text-slate-400 leading-relaxed">
+          <div className="mt-6 pt-6 border-t border-slate-50 text-center">
+            <p className="text-[10px] text-slate-400 leading-relaxed">
               &copy; 2026 Sistem Penilaian Ekstrakurikuler Sekolah.<br/>
               Modern, Ringan, dan Terintegrasi.
             </p>

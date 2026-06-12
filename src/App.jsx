@@ -82,6 +82,12 @@ function App() {
               <KoordinatorDashboard />
             </ProtectedRoute>
           } />
+
+          <Route path="/koordinator-monitoring" element={
+            <ProtectedRoute allowedRoles={['koordinator']}>
+              <PendampingDashboard />
+            </ProtectedRoute>
+          } />
         </Route>
       </Routes>
     </Router>
