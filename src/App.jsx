@@ -5,6 +5,7 @@ import DashboardLayout from './components/layout/DashboardLayout'
 
 // Pages
 import Login from './pages/Login'
+import AdminDashboard from './pages/AdminDashboard'
 import MasterData from './pages/MasterData'
 import ManagementUser from './pages/ManagementUser'
 import PelatihDashboard from './pages/PelatihDashboard'
@@ -30,7 +31,7 @@ const HomeRedirect = () => {
   if (!profile) return <Navigate to="/login" />
   
   switch (profile.role) {
-    case 'master_data': return <Navigate to="/master-data" />
+    case 'master_data': return <Navigate to="/admin" />
     case 'pelatih': return <Navigate to="/input-nilai" />
     case 'pendamping': return <Navigate to="/pendamping" />
     case 'koordinator': return <Navigate to="/koordinator" />
@@ -52,6 +53,12 @@ function App() {
         
         <Route element={<DashboardLayout />}>
           <Route path="/" element={<HomeRedirect />} />
+          
+          <Route path="/admin" element={
+            <ProtectedRoute allowedRoles={['master_data']}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          } />
           
           <Route path="/master-data" element={
             <ProtectedRoute allowedRoles={['master_data']}>

@@ -61,32 +61,36 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
       </div>
       
       <nav className="flex-1 px-3 space-y-1">
-        <NavItem to="/" icon={LayoutDashboard} isCollapsed={isCollapsed}>Dashboard</NavItem>
-        
-        <div className={`my-4 border-t border-white/10 mx-2 ${isCollapsed ? 'hidden' : ''}`} />
-        
-        {profile?.role === 'master_data' && (
+        {profile?.role === 'master_data' ? (
           <>
-            <NavItem to="/master-data" icon={Database} isCollapsed={isCollapsed}>Master Data</NavItem>
+            <NavItem to="/admin" icon={LayoutDashboard} isCollapsed={isCollapsed}>Dashboard</NavItem>
+            <div className={`my-4 border-t border-white/10 mx-2 ${isCollapsed ? 'hidden' : ''}`} />
+            <NavItem to="/master-data" icon={Database} isCollapsed={isCollapsed}>Management Data Siswa</NavItem>
             <NavItem to="/management-user" icon={Users} isCollapsed={isCollapsed}>Management User</NavItem>
           </>
-        )}
-        
-        {profile?.role === 'pelatih' && (
-          <NavItem to="/input-nilai" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
-        )}
-        
-        {profile?.role === 'pendamping' && (
+        ) : (
           <>
-            <NavItem to="/pendamping" icon={Users} isCollapsed={isCollapsed}>Monitoring</NavItem>
-            <NavItem to="/input-nilai" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
-          </>
-        )}
-        
-        {profile?.role === 'koordinator' && (
-          <>
-            <NavItem to="/koordinator-monitoring" icon={Users} isCollapsed={isCollapsed}>Monitoring</NavItem>
-            <NavItem to="/koordinator" icon={FileText} isCollapsed={isCollapsed}>Rekap Nilai</NavItem>
+            <NavItem to="/" icon={LayoutDashboard} isCollapsed={isCollapsed}>Dashboard</NavItem>
+            
+            <div className={`my-4 border-t border-white/10 mx-2 ${isCollapsed ? 'hidden' : ''}`} />
+            
+            {profile?.role === 'pelatih' && (
+              <NavItem to="/input-nilai" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
+            )}
+            
+            {profile?.role === 'pendamping' && (
+              <>
+                <NavItem to="/pendamping" icon={Users} isCollapsed={isCollapsed}>Monitoring</NavItem>
+                <NavItem to="/input-nilai" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
+              </>
+            )}
+            
+            {profile?.role === 'koordinator' && (
+              <>
+                <NavItem to="/koordinator-monitoring" icon={Users} isCollapsed={isCollapsed}>Monitoring</NavItem>
+                <NavItem to="/koordinator" icon={FileText} isCollapsed={isCollapsed}>Rekap Nilai</NavItem>
+              </>
+            )}
           </>
         )}
       </nav>
