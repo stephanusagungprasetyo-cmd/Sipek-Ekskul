@@ -150,12 +150,17 @@ export default function KoordinatorDashboard() {
         value: { semester_1_locked: newStatus },
         updated_at: new Date().toISOString()
       })
-      if (error) throw error
+      if (error) {
+        if (error.message && error.message.includes('system_settings')) {
+          throw new Error('Fitur Kunci Nilai membutuhkan tabel system_settings. Silakan jalankan script "update_presensi_and_realtime.sql" di Supabase SQL Editor.')
+        }
+        throw error
+      }
 
       setIsSemester1Locked(newStatus)
       toast.success(newStatus ? 'Nilai Semester 1 berhasil dikunci' : 'Kunci nilai Semester 1 berhasil dibuka')
     } catch (err) {
-      toast.error('Gagal memperbarui status kunci: ' + err.message)
+      toast.error(err.message)
     }
   }
 
@@ -503,7 +508,8 @@ export default function KoordinatorDashboard() {
 
       let { data: allStudents, error } = await query
 
-      if (error && error.message && error.message.includes('sem2_pilihan')) {
+      // Fallback jika skema database (kolom sem2 atau relasi) belum ada di remote database
+      if (error) {
         let fallbackQuery = supabase
           .from('students')
           .select(`
