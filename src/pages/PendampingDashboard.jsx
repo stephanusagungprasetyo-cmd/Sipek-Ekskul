@@ -239,6 +239,37 @@ export default function PendampingDashboard() {
     fetchStudentsScoresTable()
   }, [fetchStudentsScoresTable])
 
+  // Supabase Realtime Listener (Debounced 1.5 detik)
+  useEffect(() => {
+    let timer = null
+    const handleRealtimeChange = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        fetchOverviewData()
+        fetchStudentsScoresTable()
+      }, 1500)
+    }
+
+    const channel = supabase
+      .channel('pendamping-dashboard-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'scores' },
+        handleRealtimeChange
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'students' },
+        handleRealtimeChange
+      )
+      .subscribe()
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      supabase.removeChannel(channel)
+    }
+  }, [fetchOverviewData, fetchStudentsScoresTable])
+
   const handleYearChange = (year) => {
     setSelectedYear(year)
     setPage(1)

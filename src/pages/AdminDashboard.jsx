@@ -39,6 +39,37 @@ export default function AdminDashboard() {
     fetchDashboardStats()
   }, [])
 
+  // Supabase Realtime Listener untuk pembaruan statistik otomatis
+  useEffect(() => {
+    let timer = null
+    const handleRealtimeChange = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        fetchDashboardStats()
+        fetchYearStudentCount(selectedYearToDelete)
+      }, 1500)
+    }
+
+    const channel = supabase
+      .channel('admin-dashboard-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'students' },
+        handleRealtimeChange
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        handleRealtimeChange
+      )
+      .subscribe()
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      supabase.removeChannel(channel)
+    }
+  }, [selectedYearToDelete])
+
   useEffect(() => {
     fetchYearStudentCount(selectedYearToDelete)
   }, [selectedYearToDelete])

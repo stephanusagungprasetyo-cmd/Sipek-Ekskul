@@ -117,6 +117,24 @@ export default function MasterData() {
     fetchStudents()
   }, [fetchStudents])
 
+  // Supabase Realtime Listener untuk tabel students
+  useEffect(() => {
+    const channel = supabase
+      .channel('students-master-data-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'students' },
+        () => {
+          fetchStudents()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fetchStudents])
+
   async function fetchEkskuls() {
     const { data } = await supabase.from('extracurriculars').select('*').order('name')
     setEkskuls(data || [])
@@ -318,8 +336,11 @@ export default function MasterData() {
           const pil2Id = findEkskulId(row['Ekskul Pilihan 2'])
           const pil3Id = findEkskulId(row['Ekskul Pilihan 3'])
 
-          // Cek apakah siswa sudah ada di tahun ajaran ini
+          // Cek apakah siswa sudah ada di tahun ajaran ini (cocokkan nama, kelas, dan tahun ajaran)
           let existQuery = supabase.from('students').select('*').ilike('name', name)
+          if (className) {
+            existQuery = existQuery.eq('class_name', className)
+          }
           if (rowYear === '2025/2026') {
             existQuery = existQuery.or('academic_year.eq.2025/2026,academic_year.is.null')
           } else {
@@ -364,8 +385,14 @@ export default function MasterData() {
             studentId = created?.id
           }
 
-          // Sinkronisasi record scores untuk semua ekskul aktif siswa
+          // Sinkronisasi record scores: bersihkan ekskul lama yang sudah tidak aktif & upsert yang aktif
           const activeEkskulIds = [wajibId, pil1Id, pil2Id, pil3Id].filter(Boolean)
+          if (exist && activeEkskulIds.length > 0) {
+            await supabase.from('scores')
+              .delete()
+              .eq('student_id', studentId)
+              .not('extracurricular_id', 'in', `(${activeEkskulIds.join(',')})`)
+          }
           for (const eid of activeEkskulIds) {
             await supabase.from('scores').upsert({
               student_id: studentId,
@@ -451,7 +478,7 @@ export default function MasterData() {
         toast.success('Data siswa berhasil diperbarui!')
       }
 
-      // Upsert record nilai untuk ekskul terpilih
+      // Sinkronisasi record scores untuk ekskul terpilih
       const selectedEkskuls = [
         payload.wajib_id,
         payload.pilihan_1_id,
@@ -459,6 +486,19 @@ export default function MasterData() {
         payload.pilihan_3_id
       ].filter(Boolean)
 
+      // Bersihkan baris nilai ekskul lama yang sudah tidak lagi dipilih oleh siswa ini
+      if (!isNewStudent) {
+        if (selectedEkskuls.length > 0) {
+          await supabase.from('scores')
+            .delete()
+            .eq('student_id', studentId)
+            .not('extracurricular_id', 'in', `(${selectedEkskuls.join(',')})`)
+        } else {
+          await supabase.from('scores').delete().eq('student_id', studentId)
+        }
+      }
+
+      // Upsert record nilai untuk ekskul yang saat ini dipilih
       for (const eid of selectedEkskuls) {
         await supabase.from('scores').upsert({
           student_id: studentId,

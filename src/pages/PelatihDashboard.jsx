@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import { 
-  Search, 
-  Loader2, 
-  Calendar, 
-  ArrowUpDown, 
-  ChevronLeft, 
-  ChevronRight, 
-  ChevronsLeft, 
-  ChevronsRight, 
-  X, 
+import {
+  Search,
+  Loader2,
+  Calendar,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  X,
   Filter,
   CheckCircle2,
   Clock,
@@ -23,24 +23,25 @@ const ATTENDANCE_VALUES = ['', 'O', 'I', 'A', 'S']
 
 const calculateAverage = (item) => {
   if (!item) return 0
-  const attendanceFields = [...Array(12)].map((_, i) => item[`att_${i+1}`])
+  const attendanceFields = [...Array(12)].map((_, i) => item[`att_${i + 1}`])
   const filledAttendance = attendanceFields.filter(v => v && v !== '')
-  const presentCount = filledAttendance.filter(v => v === 'O' || v === 'I' || v === 'S').length
+  // HANYA 'O' (Hadir) yang dihitung hadir fisik (1 poin). 'I', 'S', 'A' bernilai 0 poin kehadiran
+  const presentCount = filledAttendance.filter(v => v?.toUpperCase() === 'O').length
   const attScore = filledAttendance.length > 0 ? (presentCount / filledAttendance.length) * 100 : 0
-  
+
   const practices = [item.prac_1, item.prac_2, item.prac_3, item.prac_4, item.prac_5]
     .filter(v => v !== null && v !== undefined && v !== '' && !isNaN(v))
-  const pAvg = practices.length > 0 ? practices.reduce((a, b) => a + parseFloat(b), 0) / practices.length : 0
-  
+  const pAvg = practices.length > 0 ? practices.reduce((a, b) => a + Math.min(100, Math.max(0, parseFloat(b))), 0) / practices.length : 0
+
   const knowledge = [item.know_1, item.know_2, item.know_3]
     .filter(v => v !== null && v !== undefined && v !== '' && !isNaN(v))
-  const kAvg = knowledge.length > 0 ? knowledge.reduce((a, b) => a + parseFloat(b), 0) / knowledge.length : 0
-  
+  const kAvg = knowledge.length > 0 ? knowledge.reduce((a, b) => a + Math.min(100, Math.max(0, parseFloat(b))), 0) / knowledge.length : 0
+
   let activeCategories = 0
   if (filledAttendance.length > 0) activeCategories++
   if (practices.length > 0) activeCategories++
   if (knowledge.length > 0) activeCategories++
-  
+
   return activeCategories > 0 ? (attScore + pAvg + kAvg) / activeCategories : 0
 }
 
@@ -53,10 +54,10 @@ const getGrade = (score) => {
 
 export default function PelatihDashboard() {
   const { profile } = useAuthStore()
-  
+
   // Filter Tahun Ajaran (Revisi Poin 1 & 2 - Default 2026/2027)
   const [selectedYear, setSelectedYear] = useState('2026/2027')
-  
+
   // Ekstrakurikuler & View Mode
   const [selectedEkskul, setSelectedEkskul] = useState(profile?.extracurricular_id || '')
   const [ekskuls, setEkskuls] = useState([])
@@ -137,6 +138,9 @@ export default function PelatihDashboard() {
         `, { count: 'exact' })
         .eq('extracurricular_id', selectedEkskul)
 
+      // Proteksi Ganda: Siswa harus benar-benar terdaftar di ekskul ini pada tabel students (Mencegah data yatim/orphaned scores)
+      query = query.or(`wajib_id.eq.${selectedEkskul},pilihan_1_id.eq.${selectedEkskul},pilihan_2_id.eq.${selectedEkskul},pilihan_3_id.eq.${selectedEkskul}`, { foreignTable: 'students' })
+
       // Filter Tahun Ajaran pada tabel students (Revisi Poin 2)
       if (selectedYear === '2025/2026') {
         query = query.or('academic_year.eq.2025/2026,academic_year.is.null', { foreignTable: 'students' })
@@ -179,39 +183,73 @@ export default function PelatihDashboard() {
     fetchData()
   }, [fetchData])
 
-  // Handle local state updates for instant UI feedback
+  // Supabase Realtime Listener untuk perubahan data siswa dari Admin
+  useEffect(() => {
+    const channel = supabase
+      .channel('students-pelatih-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'students' },
+        () => {
+          fetchData()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fetchData])
+
+  // Handle local state updates with input clamping (0 - 100)
   const handleLocalChange = (id, field, value) => {
+    let displayValue = value
+    if (field.startsWith('prac_') || field.startsWith('know_')) {
+      if (value !== '' && value !== null && value !== undefined) {
+        const num = parseFloat(value)
+        if (!isNaN(num)) {
+          if (num > 100) displayValue = 100
+          if (num < 0) displayValue = 0
+        }
+      }
+    }
     setData(prev => prev.map(item => {
       if (item.id === id) {
-        return { ...item, [field]: value }
+        return { ...item, [field]: displayValue }
       }
       return item
     }))
   }
 
-  // Handle saving score/attendance to database with automatic average recalculation
+  // Handle saving score/attendance to database with automatic average recalculation & clamping
   const handleSaveToDb = async (id, field, value) => {
     const currentItem = data.find(item => item.id === id)
     if (!currentItem) return
-    
+
     setSavingId(id)
-    const tempItem = { ...currentItem, [field]: value }
+    
+    let cleanValue = (value === '' || value === undefined || value === null) ? null : value
+    if ((field.startsWith('prac_') || field.startsWith('know_')) && cleanValue !== null) {
+      const parsed = parseFloat(cleanValue)
+      cleanValue = isNaN(parsed) ? null : Math.min(100, Math.max(0, parsed))
+    }
+
+    const tempItem = { ...currentItem, [field]: cleanValue }
     const avg = calculateAverage(tempItem)
 
-    const dbValue = (value === '' || value === undefined || value === null) ? null : value
-    const { error } = await supabase.from('scores').update({ 
-      [field]: dbValue, 
+    const { error } = await supabase.from('scores').update({
+      [field]: cleanValue,
       average_score: avg,
       updated_at: new Date().toISOString()
     }).eq('id', id)
-    
+
     setSavingId(null)
     if (error) {
       toast.error('Gagal menyimpan nilai')
     } else {
       setData(prev => prev.map(item => {
         if (item.id === id) {
-          return { ...item, [field]: value, average_score: avg }
+          return { ...item, [field]: cleanValue, average_score: avg }
         }
         return item
       }))
@@ -295,31 +333,28 @@ export default function PelatihDashboard() {
           <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/60">
             <button
               onClick={() => setViewMode('attendance')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'attendance'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'attendance'
                   ? 'bg-primary-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               Presensi (12)
             </button>
             <button
               onClick={() => setViewMode('practice')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'practice'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'practice'
                   ? 'bg-primary-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               Praktik (5)
             </button>
             <button
               onClick={() => setViewMode('knowledge')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'knowledge'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'knowledge'
                   ? 'bg-primary-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               Pengetahuan (3)
             </button>
@@ -339,7 +374,7 @@ export default function PelatihDashboard() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
           {searchTerm && (
-            <button 
+            <button
               onClick={() => setSearchTerm('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
             >
@@ -392,13 +427,13 @@ export default function PelatihDashboard() {
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-100 font-bold text-slate-600">
                     <th className="w-10 text-center py-2 px-1">No</th>
-                    <th 
+                    <th
                       className="cursor-pointer hover:text-primary-600 transition-colors py-2 px-2.5 min-w-[150px]"
                       onClick={() => requestSort('name')}
                     >
                       <div className="flex items-center gap-1">Nama Siswa <ArrowUpDown size={11} /></div>
                     </th>
-                    <th 
+                    <th
                       className="w-16 text-center cursor-pointer hover:text-primary-600 transition-colors py-2 px-1"
                       onClick={() => requestSort('class_name')}
                     >
@@ -456,14 +491,11 @@ export default function PelatihDashboard() {
                             <td key={i} className="p-0.5 text-center">
                               <button
                                 onClick={() => cycleAttendance(item.id, field, val)}
-                                title={`P-${i+1}: ${val || 'Kosong'} (Klik ganti)`}
-                                className={`w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-black mx-auto transition-all ${
-                                  !val ? 'bg-slate-100 text-slate-300 hover:bg-slate-200' : ''
-                                } ${val === 'O' ? 'bg-emerald-500 text-white shadow-sm' : ''} ${
-                                  val === 'I' ? 'bg-blue-500 text-white shadow-sm' : ''
-                                } ${val === 'S' ? 'bg-amber-500 text-white shadow-sm' : ''} ${
-                                  val === 'A' ? 'bg-rose-500 text-white shadow-sm' : ''
-                                }`}
+                                title={`P-${i + 1}: ${val || 'Kosong'} (Klik ganti)`}
+                                className={`w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-black mx-auto transition-all ${!val ? 'bg-slate-100 text-slate-300 hover:bg-slate-200' : ''
+                                  } ${val === 'O' ? 'bg-emerald-500 text-white shadow-sm' : ''} ${val === 'I' ? 'bg-blue-500 text-white shadow-sm' : ''
+                                  } ${val === 'S' ? 'bg-amber-500 text-white shadow-sm' : ''} ${val === 'A' ? 'bg-rose-500 text-white shadow-sm' : ''
+                                  }`}
                               >
                                 {val || '-'}
                               </button>
@@ -480,9 +512,9 @@ export default function PelatihDashboard() {
                               max="100"
                               placeholder="-"
                               className="w-14 h-7 text-center text-xs font-bold bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none transition-all"
-                              value={item[`prac_${i+1}`] ?? ''}
-                              onChange={(e) => handleLocalChange(item.id, `prac_${i+1}`, e.target.value)}
-                              onBlur={(e) => handleSaveToDb(item.id, `prac_${i+1}`, e.target.value)}
+                              value={item[`prac_${i + 1}`] ?? ''}
+                              onChange={(e) => handleLocalChange(item.id, `prac_${i + 1}`, e.target.value)}
+                              onBlur={(e) => handleSaveToDb(item.id, `prac_${i + 1}`, e.target.value)}
                             />
                           </td>
                         ))}
@@ -496,9 +528,9 @@ export default function PelatihDashboard() {
                               max="100"
                               placeholder="-"
                               className="w-14 h-7 text-center text-xs font-bold bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none transition-all"
-                              value={item[`know_${i+1}`] ?? ''}
-                              onChange={(e) => handleLocalChange(item.id, `know_${i+1}`, e.target.value)}
-                              onBlur={(e) => handleSaveToDb(item.id, `know_${i+1}`, e.target.value)}
+                              value={item[`know_${i + 1}`] ?? ''}
+                              onChange={(e) => handleLocalChange(item.id, `know_${i + 1}`, e.target.value)}
+                              onBlur={(e) => handleSaveToDb(item.id, `know_${i + 1}`, e.target.value)}
                             />
                           </td>
                         ))}
@@ -511,11 +543,10 @@ export default function PelatihDashboard() {
                         {/* Grade */}
                         <td className="text-center py-1.5 px-1">
                           {grade !== '-' ? (
-                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md font-black text-[11px] ${
-                              grade === 'A' ? 'bg-emerald-100 text-emerald-700' :
-                              grade === 'B' ? 'bg-blue-100 text-blue-700' :
-                              'bg-rose-100 text-rose-700'
-                            }`}>
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md font-black text-[11px] ${grade === 'A' ? 'bg-emerald-100 text-emerald-700' :
+                                grade === 'B' ? 'bg-blue-100 text-blue-700' :
+                                  'bg-rose-100 text-rose-700'
+                              }`}>
                               {grade}
                             </span>
                           ) : (

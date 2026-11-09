@@ -29,16 +29,17 @@ const calculateAverage = (item) => {
   if (!item) return 0
   const attendanceFields = [...Array(12)].map((_, i) => item[`att_${i+1}`])
   const filledAttendance = attendanceFields.filter(v => v && v !== '')
-  const presentCount = filledAttendance.filter(v => v === 'O' || v === 'I' || v === 'S').length
+  // HANYA 'O' (Hadir) yang dihitung hadir fisik (1 poin). 'I', 'S', 'A' bernilai 0 poin kehadiran
+  const presentCount = filledAttendance.filter(v => v?.toUpperCase() === 'O').length
   const attScore = filledAttendance.length > 0 ? (presentCount / filledAttendance.length) * 100 : 0
   
   const practices = [item.prac_1, item.prac_2, item.prac_3, item.prac_4, item.prac_5]
     .filter(v => v !== null && v !== undefined && v !== '' && !isNaN(v))
-  const pAvg = practices.length > 0 ? practices.reduce((a, b) => a + parseFloat(b), 0) / practices.length : 0
+  const pAvg = practices.length > 0 ? practices.reduce((a, b) => a + Math.min(100, Math.max(0, parseFloat(b))), 0) / practices.length : 0
   
   const knowledge = [item.know_1, item.know_2, item.know_3]
     .filter(v => v !== null && v !== undefined && v !== '' && !isNaN(v))
-  const kAvg = knowledge.length > 0 ? knowledge.reduce((a, b) => a + parseFloat(b), 0) / knowledge.length : 0
+  const kAvg = knowledge.length > 0 ? knowledge.reduce((a, b) => a + Math.min(100, Math.max(0, parseFloat(b))), 0) / knowledge.length : 0
   
   let activeCategories = 0
   if (filledAttendance.length > 0) activeCategories++
@@ -298,6 +299,39 @@ export default function KoordinatorDashboard() {
       fetchRekapData()
     }
   }, [fetchRekapData, activeView])
+
+  // Supabase Realtime Listener (Debounce 1.5 detik agar efisien dan tidak spam query)
+  useEffect(() => {
+    let timer = null
+    const handleRealtimeChange = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        fetchMonitoringData()
+        if (activeView === 'rekap') {
+          fetchRekapData()
+        }
+      }, 1500)
+    }
+
+    const channel = supabase
+      .channel('koordinator-dashboard-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'scores' },
+        handleRealtimeChange
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'students' },
+        handleRealtimeChange
+      )
+      .subscribe()
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      supabase.removeChannel(channel)
+    }
+  }, [fetchMonitoringData, fetchRekapData, activeView])
 
   const getScoreForEkskul = (student, ekskulId) => {
     if (!ekskulId || !student.scores) return null
