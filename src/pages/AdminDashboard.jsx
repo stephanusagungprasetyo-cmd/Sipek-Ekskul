@@ -18,6 +18,8 @@ import toast from 'react-hot-toast'
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
+  const [selectedYear, setSelectedYear] = useState('2026/2027')
+  const [selectedYearCount, setSelectedYearCount] = useState(0)
   const [stats, setStats] = useState({
     students2026: 0,
     students2025: 0,
@@ -40,6 +42,24 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchYearStudentCount(selectedYearToDelete)
   }, [selectedYearToDelete])
+
+  useEffect(() => {
+    async function fetchSelectedYearStudents() {
+      try {
+        let query = supabase.from('students').select('*', { count: 'exact', head: true })
+        if (selectedYear === '2025/2026') {
+          query = query.or('academic_year.eq.2025/2026,academic_year.is.null')
+        } else {
+          query = query.eq('academic_year', selectedYear)
+        }
+        const { count } = await query
+        setSelectedYearCount(count || 0)
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    fetchSelectedYearStudents()
+  }, [selectedYear])
 
   async function fetchDashboardStats() {
     try {
@@ -148,6 +168,30 @@ export default function AdminDashboard() {
         {/* Background decorative circles */}
         <div className="absolute -right-10 -bottom-10 w-72 h-72 bg-white/10 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute right-40 -top-20 w-48 h-48 bg-blue-400/20 rounded-full blur-2xl pointer-events-none" />
+      </div>
+
+      {/* Filter Bar: Tahun Ajaran Dropdown (Revisi Poin 1) */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Calendar size={16} className="text-primary-600 shrink-0" />
+          <label className="text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0">
+            Tahun Ajaran Aktif:
+          </label>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[140px]"
+          >
+            <option value="2026/2027">2026/2027 (Baru)</option>
+            <option value="2025/2026">2025/2026 (Lama)</option>
+            <option value="2027/2028">2027/2028</option>
+          </select>
+        </div>
+
+        <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>Terpilih: T.A. {selectedYear} ({selectedYearCount} siswa terdaftar)</span>
+        </div>
       </div>
 
       {/* Quick Statistics Strip */}

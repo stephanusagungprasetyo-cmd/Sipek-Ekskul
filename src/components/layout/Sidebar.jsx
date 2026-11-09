@@ -74,6 +74,10 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
             <div className={`my-4 border-t border-white/10 mx-2 ${isCollapsed ? 'hidden' : ''}`} />
             <NavItem to="/input-nilai" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
           </>
+        ) : profile?.role === 'koordinator' ? (
+          <>
+            <NavItem to="/koordinator" icon={LayoutDashboard} isCollapsed={isCollapsed}>Dashboard</NavItem>
+          </>
         ) : (
           <>
             <NavItem to="/" icon={LayoutDashboard} isCollapsed={isCollapsed}>Dashboard</NavItem>
@@ -82,13 +86,6 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
             
             {profile?.role === 'pelatih' && (
               <NavItem to="/input-nilai" icon={PenTool} isCollapsed={isCollapsed}>Input Nilai</NavItem>
-            )}
-            
-            {profile?.role === 'koordinator' && (
-              <>
-                <NavItem to="/koordinator-monitoring" icon={Users} isCollapsed={isCollapsed}>Monitoring</NavItem>
-                <NavItem to="/koordinator" icon={FileText} isCollapsed={isCollapsed}>Rekap Nilai</NavItem>
-              </>
             )}
           </>
         )}

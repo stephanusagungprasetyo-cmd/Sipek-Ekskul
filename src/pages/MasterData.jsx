@@ -27,11 +27,11 @@ export default function MasterData() {
   // Tahun Ajaran State (Default 2026/2027)
   const [selectedYear, setSelectedYear] = useState('2026/2027')
   
-  // Data & Pagination State
+  // Data & Pagination State (Pilihan baris: 10, 20, 50 - Default: 20)
   const [students, setStudents] = useState([])
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(25)
+  const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -135,54 +135,63 @@ export default function MasterData() {
     setPage(1)
   }
 
-  // Download Template Excel
+  // Download Template Excel (Format 9 Kolom Sesuai Revisi)
   const handleDownloadTemplate = () => {
     try {
       const templateData = [
         {
           'No': 1,
-          'Nama Siswa': 'Ahmad Pratama',
+          'Nama Lengkap Siswa': 'Ahmad Pratama',
           'JK': 'L',
           'Kelas': '7A',
-          'Ekskul': 'Pramuka'
+          'Tahun Ajaran': selectedYear || '2026/2027',
+          'Ekskul Wajib': 'Pramuka',
+          'Ekskul Pilihan 1': 'Basket',
+          'Ekskul Pilihan 2': 'English Club',
+          'Ekskul Pilihan 3': ''
         },
         {
           'No': 2,
-          'Nama Siswa': 'Ahmad Pratama',
-          'JK': 'L',
-          'Kelas': '7A',
-          'Ekskul': 'Basket'
+          'Nama Lengkap Siswa': 'Siti Nurhaliza',
+          'JK': 'P',
+          'Kelas': '7B',
+          'Tahun Ajaran': selectedYear || '2026/2027',
+          'Ekskul Wajib': 'PMR',
+          'Ekskul Pilihan 1': 'Modern Dance',
+          'Ekskul Pilihan 2': '',
+          'Ekskul Pilihan 3': ''
         },
         {
           'No': 3,
-          'Nama Siswa': 'Siti Nurhaliza',
-          'JK': 'P',
-          'Kelas': '7B',
-          'Ekskul': 'PMR'
-        },
-        {
-          'No': 4,
-          'Nama Siswa': 'Siti Nurhaliza',
-          'JK': 'P',
-          'Kelas': '7B',
-          'Ekskul': 'English Club'
+          'Nama Lengkap Siswa': 'Budi Santoso',
+          'JK': 'L',
+          'Kelas': '8A',
+          'Tahun Ajaran': selectedYear || '2026/2027',
+          'Ekskul Wajib': 'Paskibra',
+          'Ekskul Pilihan 1': 'Futsal',
+          'Ekskul Pilihan 2': 'Programming',
+          'Ekskul Pilihan 3': 'Science Club'
         }
       ]
 
       const worksheet = XLSX.utils.json_to_sheet(templateData)
       const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Template Siswa')
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Master Siswa')
 
       worksheet['!cols'] = [
         { wch: 5 },
-        { wch: 25 },
+        { wch: 26 },
         { wch: 6 },
-        { wch: 10 },
-        { wch: 20 }
+        { wch: 8 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 }
       ]
 
-      XLSX.writeFile(workbook, 'Template_Import_Siswa_SIPEK.xlsx')
-      toast.success('Template Excel berhasil diunduh!')
+      XLSX.writeFile(workbook, 'Template_Master_Data_Siswa_SIPEK.xlsx')
+      toast.success('Template Excel 9 kolom berhasil diunduh!')
     } catch (err) {
       console.error(err)
       toast.error('Gagal mengunduh template: ' + err.message)
@@ -194,13 +203,13 @@ export default function MasterData() {
     try {
       toast.loading(`Mengekspor data T.A. ${selectedYear}...`, { id: 'exporting' })
 
-      // Fetch semua data untuk tahun ajaran yang dipilih
       let query = supabase
         .from('students')
         .select(`
           name,
           gender,
           class_name,
+          academic_year,
           wajib:extracurriculars!wajib_id(name),
           pilihan1:extracurriculars!pilihan_1_id(name),
           pilihan2:extracurriculars!pilihan_2_id(name),
@@ -226,9 +235,10 @@ export default function MasterData() {
 
       const excelData = allStudents.map((student, idx) => ({
         'No': idx + 1,
-        'Nama Siswa': student.name,
+        'Nama Lengkap Siswa': student.name,
         'JK': student.gender,
         'Kelas': student.class_name,
+        'Tahun Ajaran': student.academic_year || selectedYear,
         'Ekskul Wajib': student.wajib?.name || '-',
         'Ekskul Pilihan 1': student.pilihan1?.name || '-',
         'Ekskul Pilihan 2': student.pilihan2?.name || '-',
@@ -241,13 +251,14 @@ export default function MasterData() {
 
       worksheet['!cols'] = [
         { wch: 5 },
-        { wch: 28 },
+        { wch: 26 },
         { wch: 6 },
-        { wch: 10 },
-        { wch: 20 },
-        { wch: 20 },
-        { wch: 20 },
-        { wch: 20 }
+        { wch: 8 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 }
       ]
 
       XLSX.writeFile(workbook, `Data_Siswa_TA_${selectedYear.replace('/', '_')}.xlsx`)
@@ -258,7 +269,7 @@ export default function MasterData() {
     }
   }
 
-  // Import File Excel dengan Pilihan Tahun Ajaran
+  // Import File Excel (Mendukung Format 9 Kolom Baru & Format Lama)
   const handleFileUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -276,95 +287,103 @@ export default function MasterData() {
 
         if (data.length === 0) throw new Error('File Excel kosong atau format tidak sesuai')
 
-        toast.loading(`Memproses import ke T.A. ${importTargetYear}...`, { id: 'uploading' })
-        const WAJIB_LIST = ['pramuka', 'pmr', 'dewan galang', 'paskibra']
+        toast.loading(`Memproses import ${data.length} baris data...`, { id: 'uploading' })
+        
+        // Buat map ekstrakurikuler case-insensitive untuk pencarian cepat ID
+        const ekskulMap = {}
+        ekskuls.forEach(ek => {
+          ekskulMap[ek.name.toLowerCase().trim()] = ek.id
+        })
+
+        const findEkskulId = (name) => {
+          if (!name) return null
+          const clean = name.toString().toLowerCase().trim()
+          return ekskulMap[clean] || null
+        }
 
         let successCount = 0
 
         for (const row of data) {
-          const name = (row['Nama Siswa'] || row['Nama'] || '').toString().trim()
+          const name = (row['Nama Lengkap Siswa'] || row['Nama Siswa'] || row['Nama'] || '').toString().trim()
           const genderRaw = (row['JK'] || row['Jenis Kelamin'] || '').toString().trim().toUpperCase()
           const gender = genderRaw.startsWith('P') ? 'P' : 'L'
           const className = (row['Kelas'] || '').toString().trim()
-          const ekskulName = (row['Ekskul'] || row['Ekstrakurikuler'] || '').toString().trim()
+          const rowYear = (row['Tahun Ajaran'] || importTargetYear || selectedYear).toString().trim()
 
           if (!name) continue
 
-          // Cari ID Ekskul jika dicantumkan
-          let eksData = null
-          if (ekskulName) {
-            const res = await supabase.from('extracurriculars').select('id').ilike('name', ekskulName).maybeSingle()
-            eksData = res.data
-          }
+          // Resolusi Ekskul dari Kolom 9-Format Baru
+          const wajibId = findEkskulId(row['Ekskul Wajib'])
+          const pil1Id = findEkskulId(row['Ekskul Pilihan 1'] || row['Ekskul'])
+          const pil2Id = findEkskulId(row['Ekskul Pilihan 2'])
+          const pil3Id = findEkskulId(row['Ekskul Pilihan 3'])
 
-          // Cek apakah siswa sudah ada di tahun ajaran target
+          // Cek apakah siswa sudah ada di tahun ajaran ini
           let existQuery = supabase.from('students').select('*').ilike('name', name)
-          if (importTargetYear === '2025/2026') {
+          if (rowYear === '2025/2026') {
             existQuery = existQuery.or('academic_year.eq.2025/2026,academic_year.is.null')
           } else {
-            existQuery = existQuery.eq('academic_year', importTargetYear)
+            existQuery = existQuery.eq('academic_year', rowYear)
           }
 
           const { data: exist } = await existQuery.maybeSingle()
-          const isWajib = ekskulName && WAJIB_LIST.includes(ekskulName.toLowerCase())
+
+          let studentId = null
 
           if (exist) {
-            // Update data ekskul siswa yang sudah ada di tahun ajaran ini
-            let updatePayload = { class_name: className || exist.class_name }
-            if (eksData) {
-              if (isWajib) updatePayload.wajib_id = eksData.id
-              else if (!exist.pilihan_1_id || exist.pilihan_1_id === eksData.id) updatePayload.pilihan_1_id = eksData.id
-              else if (!exist.pilihan_2_id || exist.pilihan_2_id === eksData.id) updatePayload.pilihan_2_id = eksData.id
-              else updatePayload.pilihan_3_id = eksData.id
+            studentId = exist.id
+            const updatePayload = {
+              class_name: className || exist.class_name,
+              academic_year: rowYear
             }
+            if (wajibId) updatePayload.wajib_id = wajibId
+            if (pil1Id) updatePayload.pilihan_1_id = pil1Id
+            if (pil2Id) updatePayload.pilihan_2_id = pil2Id
+            if (pil3Id) updatePayload.pilihan_3_id = pil3Id
 
-            await supabase.from('students').update(updatePayload).eq('id', exist.id)
-
-            if (eksData) {
-              await supabase.from('scores').upsert({ 
-                student_id: exist.id, 
-                extracurricular_id: eksData.id 
-              }, { onConflict: 'student_id,extracurricular_id' })
-            }
+            await supabase.from('students').update(updatePayload).eq('id', studentId)
           } else {
-            // Tambahkan siswa baru dengan academic_year target
-            let insertPayload = {
+            const insertPayload = {
               name,
               gender,
               class_name: className || '-',
-              academic_year: importTargetYear
+              academic_year: rowYear,
+              wajib_id: wajibId,
+              pilihan_1_id: pil1Id,
+              pilihan_2_id: pil2Id,
+              pilihan_3_id: pil3Id
             }
 
-            if (eksData) {
-              if (isWajib) insertPayload.wajib_id = eksData.id
-              else insertPayload.pilihan_1_id = eksData.id
-            }
-
-            const { data: created } = await supabase
+            const { data: created, error: createErr } = await supabase
               .from('students')
               .insert(insertPayload)
               .select('id')
               .single()
 
-            if (created && eksData) {
-              await supabase.from('scores').insert({ 
-                student_id: created.id, 
-                extracurricular_id: eksData.id 
-              })
-            }
+            if (createErr) throw createErr
+            studentId = created?.id
+          }
+
+          // Sinkronisasi record scores untuk semua ekskul aktif siswa
+          const activeEkskulIds = [wajibId, pil1Id, pil2Id, pil3Id].filter(Boolean)
+          for (const eid of activeEkskulIds) {
+            await supabase.from('scores').upsert({
+              student_id: studentId,
+              extracurricular_id: eid
+            }, { onConflict: 'student_id,extracurricular_id' })
           }
 
           successCount++
         }
 
-        toast.success(`Berhasil mengimpor ${successCount} baris data ke T.A. ${importTargetYear}!`, { id: 'uploading' })
+        toast.success(`Berhasil memproses ${successCount} data siswa!`, { id: 'uploading' })
         setShowImportModal(false)
         setSelectedYear(importTargetYear)
         setPage(1)
         fetchStudents()
       } catch (err) {
         console.error(err)
-        toast.error('Error: ' + err.message, { id: 'uploading' })
+        toast.error('Gagal import: ' + err.message, { id: 'uploading' })
       } finally {
         setIsUploading(false)
         e.target.value = ''
@@ -474,28 +493,24 @@ export default function MasterData() {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Top Header */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary-50 border border-primary-200/80 rounded-full text-xs font-bold text-primary-700 mb-2">
-            <Calendar size={13} />
-            <span>Tahun Ajaran Aktif: {selectedYear}</span>
-          </div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight">Management Data Siswa</h2>
-          <p className="text-slate-500 text-sm mt-1">
-            Kelola data siswa per tahun ajaran, import template Excel, dan integrasi pilihan ekskul.
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">Management Data Siswa</h2>
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">
+            Sumber master data siswa sekolah untuk role Pendamping, Pelatih, dan Koordinator.
           </p>
         </div>
         
         {/* Action Buttons */}
-        <div className="flex flex-wrap gap-2.5">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={handleDownloadTemplate}
-            className="btn bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-sm flex items-center gap-2 text-xs font-bold py-2.5 px-3.5"
-            title="Download Template Format Excel"
+            className="btn bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-sm flex items-center gap-1.5 text-xs font-bold py-2 px-3"
+            title="Download Template 9 Kolom Excel"
           >
-            <Download size={15} className="text-slate-500" />
+            <Download size={14} className="text-slate-500" />
             <span>Download Template</span>
           </button>
 
@@ -504,175 +519,152 @@ export default function MasterData() {
               setImportTargetYear(selectedYear)
               setShowImportModal(true)
             }}
-            className="btn bg-primary-600 hover:bg-primary-700 text-white shadow-sm flex items-center gap-2 text-xs font-bold py-2.5 px-3.5"
+            className="btn bg-primary-600 hover:bg-primary-700 text-white shadow-sm flex items-center gap-1.5 text-xs font-bold py-2 px-3"
           >
-            <Upload size={15} />
+            <Upload size={14} />
             <span>Import Excel</span>
           </button>
 
           <button
             onClick={handleExportExcel}
-            className="btn bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center gap-2 text-xs font-bold py-2.5 px-3.5"
+            className="btn bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center gap-1.5 text-xs font-bold py-2 px-3"
           >
-            <FileSpreadsheet size={15} />
+            <FileSpreadsheet size={14} />
             <span>Export Excel</span>
           </button>
 
           <button
             onClick={handleAddNewStudent}
-            className="btn bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 text-xs font-bold py-2.5 px-3.5"
+            className="btn bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5 text-xs font-bold py-2 px-3"
           >
-            <Plus size={15} />
+            <Plus size={14} />
             <span>Tambah Siswa</span>
           </button>
         </div>
       </div>
 
-      {/* Control Bar: Tahun Ajaran Filter, Search & PageSize */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        {/* Tahun Ajaran Tabs / Selector */}
+      {/* Control Bar: Tahun Ajaran Dropdown, Search & PageSize */}
+      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        {/* Tahun Ajaran Dropdown (Revisi Poin 1) */}
         <div className="flex items-center gap-2">
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
+          <label className="text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
             <Calendar size={14} className="text-primary-600" />
             Tahun Ajaran:
           </label>
-          <div className="inline-flex p-1 bg-slate-100 rounded-xl">
-            <button
-              onClick={() => handleYearChange('2026/2027')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                selectedYear === '2026/2027' 
-                  ? 'bg-white text-primary-600 shadow-sm font-extrabold' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              2026/2027 (Baru)
-            </button>
-            <button
-              onClick={() => handleYearChange('2025/2026')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                selectedYear === '2025/2026' 
-                  ? 'bg-white text-primary-600 shadow-sm font-extrabold' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              2025/2026 (Lama)
-            </button>
-            <button
-              onClick={() => handleYearChange('2027/2028')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                selectedYear === '2027/2028' 
-                  ? 'bg-white text-primary-600 shadow-sm font-extrabold' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              2027/2028
-            </button>
-          </div>
+          <select
+            value={selectedYear}
+            onChange={(e) => handleYearChange(e.target.value)}
+            className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[140px]"
+          >
+            <option value="2026/2027">2026/2027 (Baru)</option>
+            <option value="2025/2026">2025/2026 (Lama)</option>
+            <option value="2027/2028">2027/2028</option>
+          </select>
         </div>
 
-        {/* Search Input & Page Size */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+        {/* Search Input & Page Size (Pilihan: 10, 20, 50 - Revisi Tambahan) */}
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex-1 md:w-60">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
             <input
               type="text"
               placeholder="Cari nama atau kelas..."
-              className="input-field pl-10 py-2 text-xs"
+              className="input-field pl-9 py-1.5 text-xs"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             {searchTerm && (
               <button 
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
-                <X size={14} />
+                <X size={13} />
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0 text-xs text-slate-500">
-            <span>Baris:</span>
+          <div className="flex items-center gap-1 shrink-0 text-xs text-slate-500">
+            <span>Tampilkan:</span>
             <select
               value={pageSize}
               onChange={(e) => {
                 setPageSize(Number(e.target.value))
                 setPage(1)
               }}
-              className="input-field py-1.5 px-2 text-xs w-20 font-semibold"
+              className="input-field py-1 px-2 text-xs w-16 font-bold"
             >
-              <option value={25}>25</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
               <option value={50}>50</option>
-              <option value={100}>100</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Main Table with Server Pagination */}
-      <div className="table-container bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+      {/* Main Compact Table (Ringkas, minim scroll kanan-kiri) */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
         {loading ? (
-          <div className="p-20 text-center text-slate-400 flex flex-col items-center gap-3">
-            <Loader2 className="animate-spin text-primary-600" size={32} />
-            <p className="text-sm font-medium">Memuat data siswa Tahun Ajaran {selectedYear}...</p>
+          <div className="p-16 text-center text-slate-400 flex flex-col items-center gap-3">
+            <Loader2 className="animate-spin text-primary-600" size={28} />
+            <p className="text-xs font-medium">Memuat data siswa Tahun Ajaran {selectedYear}...</p>
           </div>
         ) : students.length > 0 ? (
           <>
             <div className="overflow-x-auto">
-              <table className="table-modern whitespace-nowrap w-full">
+              <table className="table-modern w-full text-xs">
                 <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-100 text-xs font-bold text-slate-600">
-                    <th className="w-14 text-center">No</th>
-                    <th className="cursor-pointer hover:text-primary-600 transition-colors" onClick={() => requestSort('name')}>
-                      <div className="flex items-center gap-1.5">Nama Siswa <ArrowUpDown size={13} /></div>
+                  <tr className="bg-slate-50/80 border-b border-slate-100 font-bold text-slate-600">
+                    <th className="w-10 text-center py-2 px-2">No</th>
+                    <th className="cursor-pointer hover:text-primary-600 transition-colors py-2 px-3" onClick={() => requestSort('name')}>
+                      <div className="flex items-center gap-1">Nama Siswa <ArrowUpDown size={11} /></div>
                     </th>
-                    <th className="w-16 text-center">JK</th>
-                    <th className="w-24 cursor-pointer hover:text-primary-600 transition-colors" onClick={() => requestSort('class_name')}>
-                      <div className="flex items-center gap-1.5">Kelas <ArrowUpDown size={13} /></div>
+                    <th className="w-12 text-center py-2 px-1">JK</th>
+                    <th className="w-16 cursor-pointer hover:text-primary-600 transition-colors text-center py-2 px-1" onClick={() => requestSort('class_name')}>
+                      <div className="flex items-center justify-center gap-1">Kelas <ArrowUpDown size={11} /></div>
                     </th>
-                    <th>Wajib</th>
-                    <th>Pilihan 1</th>
-                    <th>Pilihan 2</th>
-                    <th>Pilihan 3</th>
-                    <th className="w-24 text-center">Aksi</th>
+                    <th className="py-2 px-2">Ekskul Wajib</th>
+                    <th className="py-2 px-2">Pilihan 1</th>
+                    <th className="py-2 px-2">Pilihan 2</th>
+                    <th className="py-2 px-2">Pilihan 3</th>
+                    <th className="w-16 text-center py-2 px-2">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
+                <tbody className="divide-y divide-slate-100">
                   {students.map((student, idx) => (
                     <tr key={student.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="text-center text-slate-400 font-medium">
+                      <td className="text-center text-slate-400 font-medium py-2 px-2">
                         {(page - 1) * pageSize + idx + 1}
                       </td>
-                      <td className="font-bold text-slate-800">
+                      <td className="font-bold text-slate-800 py-2 px-3">
                         {student.name}
                       </td>
-                      <td className="text-center font-semibold text-slate-600">
-                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${student.gender === 'P' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'}`}>
+                      <td className="text-center py-2 px-1">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${student.gender === 'P' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'}`}>
                           {student.gender}
                         </span>
                       </td>
-                      <td className="font-bold text-slate-700">
+                      <td className="font-bold text-slate-700 text-center py-2 px-1">
                         {student.class_name}
                       </td>
-                      <td><EkskulBadge name={student.wajib?.name} color="indigo" /></td>
-                      <td><EkskulBadge name={student.pilihan1?.name} color="amber" /></td>
-                      <td><EkskulBadge name={student.pilihan2?.name} color="teal" /></td>
-                      <td><EkskulBadge name={student.pilihan3?.name} color="rose" /></td>
-                      <td>
-                        <div className="flex items-center justify-center gap-1.5">
+                      <td className="py-2 px-2"><EkskulBadge name={student.wajib?.name} color="indigo" /></td>
+                      <td className="py-2 px-2"><EkskulBadge name={student.pilihan1?.name} color="amber" /></td>
+                      <td className="py-2 px-2"><EkskulBadge name={student.pilihan2?.name} color="teal" /></td>
+                      <td className="py-2 px-2"><EkskulBadge name={student.pilihan3?.name} color="rose" /></td>
+                      <td className="py-2 px-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
                           <button 
                             onClick={() => handleEditClick(student)} 
-                            className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all"
+                            className="p-1 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-all"
                             title="Edit Siswa"
                           >
-                            <Edit3 size={15} />
+                            <Edit3 size={14} />
                           </button>
                           <button 
                             onClick={() => deleteStudent(student.id, student.name)} 
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
                             title="Hapus Siswa"
                           >
-                            <Trash2 size={15} />
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </td>
@@ -683,7 +675,7 @@ export default function MasterData() {
             </div>
 
             {/* Pagination Controls */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+            <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
               <div>
                 Menampilkan <strong className="text-slate-800">{(page - 1) * pageSize + 1}</strong> - <strong className="text-slate-800">{Math.min(page * pageSize, totalCount)}</strong> dari <strong className="text-slate-800">{totalCount}</strong> siswa (T.A. {selectedYear})
               </div>
@@ -695,7 +687,7 @@ export default function MasterData() {
                   className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   title="Halaman Pertama"
                 >
-                  <ChevronsLeft size={16} />
+                  <ChevronsLeft size={15} />
                 </button>
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
@@ -703,10 +695,10 @@ export default function MasterData() {
                   className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   title="Halaman Sebelumnya"
                 >
-                  <ChevronLeft size={16} />
+                  <ChevronLeft size={15} />
                 </button>
 
-                <span className="px-3 py-1 font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg">
+                <span className="px-2.5 py-1 font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg text-xs">
                   Halaman {page} dari {totalPages}
                 </span>
 
@@ -716,7 +708,7 @@ export default function MasterData() {
                   className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   title="Halaman Selanjutnya"
                 >
-                  <ChevronRight size={16} />
+                  <ChevronRight size={15} />
                 </button>
                 <button
                   onClick={() => setPage(totalPages)}
@@ -724,7 +716,7 @@ export default function MasterData() {
                   className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   title="Halaman Terakhir"
                 >
-                  <ChevronsRight size={16} />
+                  <ChevronsRight size={15} />
                 </button>
               </div>
             </div>
@@ -736,63 +728,61 @@ export default function MasterData() {
             </div>
             <p className="font-bold text-slate-700">Belum ada data siswa untuk Tahun Ajaran {selectedYear}</p>
             <p className="text-xs text-slate-400 max-w-sm">
-              Silakan klik tombol <strong>"Import Excel"</strong> untuk mengunggah file data siswa baru, atau gunakan <strong>"Download Template"</strong> jika membutuhkan format file.
+              Silakan klik <strong>"Import Excel"</strong> untuk mengunggah template data siswa baru (9 kolom), atau klik <strong>"Download Template"</strong> untuk mengunduh formatnya.
             </p>
           </div>
         )}
       </div>
 
-      {/* Modal Import Excel dengan Pemilih Tahun Ajaran */}
+      {/* Modal Import Excel 9 Kolom dengan Pilihan Tahun Ajaran */}
       {showImportModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden animate-fade-in">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center">
-                  <Upload size={20} />
+                  <Upload size={18} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-800">Import Data Siswa</h3>
-                  <p className="text-[11px] text-slate-400">Unggah file Excel .xlsx atau .xls</p>
+                  <h3 className="text-sm font-bold text-slate-800">Import Master Data Siswa</h3>
+                  <p className="text-[11px] text-slate-400">Format 9 Kolom Excel</p>
                 </div>
               </div>
               <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
-              {/* Pemilih Tahun Ajaran Tujuan Import */}
-              <div className="space-y-1.5">
+            <div className="p-5 space-y-4">
+              <div className="space-y-1">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Target Tahun Ajaran
+                  Target Tahun Ajaran (Fallback)
                 </label>
                 <select
                   value={importTargetYear}
                   onChange={(e) => setImportTargetYear(e.target.value)}
-                  className="input-field py-2 text-xs font-bold text-slate-800"
+                  className="input-field py-1.5 text-xs font-bold text-slate-800"
                 >
-                  <option value="2026/2027">Tahun Ajaran 2026/2027 (Baru)</option>
-                  <option value="2025/2026">Tahun Ajaran 2025/2026 (Lama)</option>
-                  <option value="2027/2028">Tahun Ajaran 2027/2028</option>
+                  <option value="2026/2027">2026/2027 (Baru)</option>
+                  <option value="2025/2026">2025/2026 (Lama)</option>
+                  <option value="2027/2028">2027/2028</option>
                 </select>
-                <p className="text-[11px] text-slate-400 leading-tight">
-                  Data yang diunggah akan otomatis terdata pada Tahun Ajaran yang Anda pilih di atas.
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  Jika baris di Excel tidak mengisi Tahun Ajaran, target di atas yang akan digunakan secara otomatis.
                 </p>
               </div>
 
-              {/* Area File Upload */}
-              <div className="border-2 border-dashed border-slate-200 hover:border-primary-400 rounded-2xl p-6 text-center transition-colors">
-                <FileSpreadsheet size={36} className="mx-auto text-primary-500 mb-2" />
-                <p className="text-xs font-bold text-slate-700 mb-1">
+              <div className="border-2 border-dashed border-slate-200 hover:border-primary-400 rounded-2xl p-5 text-center transition-colors">
+                <FileSpreadsheet size={32} className="mx-auto text-primary-500 mb-2" />
+                <p className="text-xs font-bold text-slate-700 mb-0.5">
                   Pilih file Excel yang akan diunggah
                 </p>
-                <p className="text-[10px] text-slate-400 mb-4">
-                  Kolom format: <span className="font-semibold text-slate-600">Nama Siswa, JK, Kelas, Ekskul</span>
+                <p className="text-[10px] text-slate-400 mb-3 leading-tight">
+                  Format: <span className="font-semibold text-slate-600">No, Nama Lengkap Siswa, JK, Kelas, Tahun Ajaran, Ekskul Wajib, Pilihan 1-3</span>
                 </p>
 
-                <label className="btn btn-primary py-2 px-5 text-xs font-bold cursor-pointer inline-flex items-center gap-2">
-                  {isUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                <label className="btn btn-primary py-2 px-4 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5">
+                  {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   <span>{isUploading ? 'Memproses...' : 'Pilih File Excel'}</span>
                   <input
                     type="file"
@@ -804,10 +794,10 @@ export default function MasterData() {
                 </label>
               </div>
 
-              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 flex items-start gap-2.5 text-[11px] text-blue-700">
+              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 flex items-start gap-2 text-[11px] text-blue-700">
                 <AlertCircle size={15} className="shrink-0 mt-0.5 text-blue-600" />
                 <p>
-                  Belum punya format Excel? Gunakan tombol <strong>Download Template</strong> di halaman utama untuk format kolom yang telah disesuaikan.
+                  Gunakan tombol <strong>Download Template</strong> untuk memastikan 9 kolom sudah sesuai format.
                 </p>
               </div>
             </div>
@@ -818,25 +808,25 @@ export default function MasterData() {
       {/* Modal Tambah / Edit Siswa */}
       {showEditModal && editingStudent && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden animate-fade-in">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="text-lg font-bold text-slate-800">
+          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl border border-slate-100 overflow-hidden animate-fade-in">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="text-base font-bold text-slate-800">
                 {isNewStudent ? 'Tambah Data Siswa Baru' : 'Edit Data Siswa'}
               </h3>
               <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveStudent} className="p-6 sm:p-8 space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleSaveStudent} className="p-5 sm:p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Nama Lengkap Siswa
                   </label>
                   <input 
                     type="text" 
-                    className="input-field text-xs py-2" 
+                    className="input-field text-xs py-1.5" 
                     value={editingStudent.name} 
                     onChange={(e) => setEditingStudent({...editingStudent, name: e.target.value})} 
                     required 
@@ -844,11 +834,11 @@ export default function MasterData() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Jenis Kelamin
                   </label>
                   <select 
-                    className="input-field text-xs py-2" 
+                    className="input-field text-xs py-1.5" 
                     value={editingStudent.gender} 
                     onChange={(e) => setEditingStudent({...editingStudent, gender: e.target.value})}
                   >
@@ -858,12 +848,12 @@ export default function MasterData() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Kelas
                   </label>
                   <input 
                     type="text" 
-                    className="input-field text-xs py-2" 
+                    className="input-field text-xs py-1.5" 
                     placeholder="Contoh: 7A, 8B"
                     value={editingStudent.class_name} 
                     onChange={(e) => setEditingStudent({...editingStudent, class_name: e.target.value})} 
@@ -871,12 +861,12 @@ export default function MasterData() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Tahun Ajaran
                   </label>
                   <select 
-                    className="input-field text-xs py-2 font-semibold"
+                    className="input-field text-xs py-1.5 font-bold"
                     value={editingStudent.academic_year}
                     onChange={(e) => setEditingStudent({...editingStudent, academic_year: e.target.value})}
                   >
@@ -887,7 +877,7 @@ export default function MasterData() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Ekskul Wajib
                   </label>
                   <EkskulSelect 
@@ -898,7 +888,7 @@ export default function MasterData() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Ekskul Pilihan 1
                   </label>
                   <EkskulSelect 
@@ -909,7 +899,7 @@ export default function MasterData() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Ekskul Pilihan 2
                   </label>
                   <EkskulSelect 
@@ -919,8 +909,8 @@ export default function MasterData() {
                   />
                 </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Ekskul Pilihan 3
                   </label>
                   <EkskulSelect 
@@ -931,20 +921,20 @@ export default function MasterData() {
                 </div>
               </div>
 
-              <div className="pt-3 flex gap-3">
+              <div className="pt-2 flex gap-3">
                 <button
                   type="button"
                   onClick={() => setShowEditModal(false)}
-                  className="flex-1 btn btn-secondary py-2.5 text-xs font-bold"
+                  className="flex-1 btn btn-secondary py-2 text-xs font-bold"
                 >
                   Batal
                 </button>
                 <button 
                   type="submit" 
                   disabled={loading} 
-                  className="flex-1 btn btn-primary py-2.5 text-xs font-bold flex items-center justify-center gap-2"
+                  className="flex-1 btn btn-primary py-2 text-xs font-bold flex items-center justify-center gap-1.5"
                 >
-                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {loading ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
                   <span>{isNewStudent ? 'Tambahkan Siswa' : 'Simpan Perubahan'}</span>
                 </button>
               </div>
@@ -957,7 +947,7 @@ export default function MasterData() {
 }
 
 function EkskulBadge({ name, color }) {
-  if (!name) return <span className="text-slate-300">-</span>
+  if (!name) return <span className="text-slate-300 text-[10px]">-</span>
   const colors = {
     indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
     amber: 'bg-amber-50 text-amber-700 border-amber-100',
@@ -965,7 +955,7 @@ function EkskulBadge({ name, color }) {
     rose: 'bg-rose-50 text-rose-700 border-rose-100'
   }
   return (
-    <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider border ${colors[color]}`}>
+    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border truncate inline-block max-w-[130px] ${colors[color]}`} title={name}>
       {name}
     </span>
   )
@@ -973,7 +963,7 @@ function EkskulBadge({ name, color }) {
 
 function EkskulSelect({ value, ekskuls, onChange }) {
   return (
-    <select className="input-field text-xs py-2" value={value} onChange={(e) => onChange(e.target.value)}>
+    <select className="input-field text-xs py-1.5" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">-- Tidak ada --</option>
       {ekskuls.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
     </select>

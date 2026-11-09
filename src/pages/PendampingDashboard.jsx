@@ -45,11 +45,11 @@ export default function PendampingDashboard() {
   const [ekskulList, setEkskulList] = useState([])
   const [selectedEkskulFilter, setSelectedEkskulFilter] = useState('all')
 
-  // Server-side Pagination State (Tabel Siswa)
+  // Server-side Pagination State (Tabel Siswa - Pilihan: 10, 20, 50)
   const [studentsScores, setStudentsScores] = useState([])
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(25)
+  const [pageSize, setPageSize] = useState(20)
   const [loadingTable, setLoadingTable] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -271,58 +271,35 @@ export default function PendampingDashboard() {
         <div className="absolute right-36 -top-16 w-40 h-40 bg-blue-400/20 rounded-full blur-2xl pointer-events-none" />
       </div>
 
-      {/* Control Bar: Tahun Ajaran & Semester Filter */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        {/* Tahun Ajaran Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+      {/* Control Bar: Tahun Ajaran Dropdown & Semester Filter */}
+      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        {/* Tahun Ajaran Dropdown (Revisi Poin 1) */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
             <Calendar size={14} className="text-primary-600" />
             Tahun Ajaran:
-          </span>
-          <div className="inline-flex p-1 bg-slate-100 rounded-xl overflow-x-auto">
-            <button
-              onClick={() => handleYearChange('2026/2027')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                selectedYear === '2026/2027'
-                  ? 'bg-white text-primary-600 shadow-sm font-extrabold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              2026/2027 (Baru)
-            </button>
-            <button
-              onClick={() => handleYearChange('2025/2026')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                selectedYear === '2025/2026'
-                  ? 'bg-white text-primary-600 shadow-sm font-extrabold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              2025/2026 (Lama)
-            </button>
-            <button
-              onClick={() => handleYearChange('2027/2028')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                selectedYear === '2027/2028'
-                  ? 'bg-white text-primary-600 shadow-sm font-extrabold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              2027/2028
-            </button>
-          </div>
+          </label>
+          <select
+            value={selectedYear}
+            onChange={(e) => handleYearChange(e.target.value)}
+            className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[140px]"
+          >
+            <option value="2026/2027">2026/2027 (Baru)</option>
+            <option value="2025/2026">2025/2026 (Lama)</option>
+            <option value="2027/2028">2027/2028</option>
+          </select>
         </div>
 
         {/* Semester Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
             <Clock size={14} className="text-primary-600" />
             Semester:
           </span>
-          <div className="inline-flex p-1 bg-slate-100 rounded-xl">
+          <div className="inline-flex p-0.5 bg-slate-100 rounded-xl">
             <button
               onClick={() => handleSemesterChange('1')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                 selectedSemester === '1'
                   ? 'bg-primary-600 text-white shadow-sm font-extrabold'
                   : 'text-slate-600 hover:text-slate-900'
@@ -332,7 +309,7 @@ export default function PendampingDashboard() {
             </button>
             <button
               onClick={() => handleSemesterChange('2')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                 selectedSemester === '2'
                   ? 'bg-primary-600 text-white shadow-sm font-extrabold'
                   : 'text-slate-600 hover:text-slate-900'
@@ -596,20 +573,20 @@ export default function PendampingDashboard() {
                 </div>
               </div>
 
-              {/* Rows Per Page */}
-              <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
-                <span>Baris:</span>
+              {/* Rows Per Page (10, 20, 50) */}
+              <div className="flex items-center justify-end gap-1.5 text-xs text-slate-500">
+                <span>Tampilkan:</span>
                 <select
                   value={pageSize}
                   onChange={(e) => {
                     setPageSize(Number(e.target.value))
                     setPage(1)
                   }}
-                  className="input-field py-1.5 px-2 text-xs w-20 font-semibold"
+                  className="input-field py-1 px-2 text-xs w-16 font-bold"
                 >
-                  <option value={25}>25</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
                   <option value={50}>50</option>
-                  <option value={100}>100</option>
                 </select>
               </div>
             </div>
@@ -624,12 +601,12 @@ export default function PendampingDashboard() {
               ) : studentsScores.length > 0 ? (
                 <>
                   <div className="overflow-x-auto">
-                    <table className="table-modern whitespace-nowrap w-full text-xs">
+                    <table className="table-modern w-full text-xs">
                       <thead>
                         <tr className="bg-slate-50/80 border-b border-slate-100 font-bold text-slate-600">
-                          <th className="w-12 text-center">No</th>
+                          <th className="w-10 text-center py-2 px-1">No</th>
                           <th 
-                            className="cursor-pointer hover:text-primary-600 transition-colors"
+                            className="cursor-pointer hover:text-primary-600 transition-colors py-2 px-2.5"
                             onClick={() => {
                               setSortConfig({
                                 key: 'student.name',
@@ -638,13 +615,13 @@ export default function PendampingDashboard() {
                               setPage(1)
                             }}
                           >
-                            <div className="flex items-center gap-1.5">
-                              Nama Siswa <ArrowUpDown size={12} />
+                            <div className="flex items-center gap-1">
+                              Nama Siswa <ArrowUpDown size={11} />
                             </div>
                           </th>
-                          <th className="w-14 text-center">JK</th>
+                          <th className="w-12 text-center py-2 px-1">JK</th>
                           <th 
-                            className="w-20 cursor-pointer hover:text-primary-600 transition-colors text-center"
+                            className="w-16 cursor-pointer hover:text-primary-600 transition-colors text-center py-2 px-1"
                             onClick={() => {
                               setSortConfig({
                                 key: 'student.class_name',
@@ -653,15 +630,15 @@ export default function PendampingDashboard() {
                               setPage(1)
                             }}
                           >
-                            <div className="flex items-center justify-center gap-1.5">
-                              Kelas <ArrowUpDown size={12} />
+                            <div className="flex items-center justify-center gap-1">
+                              Kelas <ArrowUpDown size={11} />
                             </div>
                           </th>
-                          <th>Ekstrakurikuler</th>
-                          <th className="text-center w-28">Nilai Rerata</th>
-                          <th className="text-center w-20">Predikat</th>
-                          <th className="text-center w-28">Status</th>
-                          <th className="text-center w-28">Aksi</th>
+                          <th className="py-2 px-2">Ekstrakurikuler</th>
+                          <th className="text-center w-20 py-2 px-1">Rerata</th>
+                          <th className="text-center w-16 py-2 px-1">Predikat</th>
+                          <th className="text-center w-24 py-2 px-1">Status</th>
+                          <th className="text-center w-20 py-2 px-1">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -672,31 +649,31 @@ export default function PendampingDashboard() {
 
                           return (
                             <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="text-center text-slate-400 font-medium">
+                              <td className="text-center text-slate-400 font-medium py-2 px-1">
                                 {(page - 1) * pageSize + idx + 1}
                               </td>
-                              <td className="font-bold text-slate-800">
+                              <td className="font-bold text-slate-800 py-2 px-2.5">
                                 {item.student?.name}
                               </td>
-                              <td className="text-center">
-                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${item.student?.gender === 'P' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'}`}>
+                              <td className="text-center py-2 px-1">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${item.student?.gender === 'P' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'}`}>
                                   {item.student?.gender}
                                 </span>
                               </td>
-                              <td className="text-center font-bold text-slate-700">
+                              <td className="text-center font-bold text-slate-700 py-2 px-1">
                                 {item.student?.class_name}
                               </td>
-                              <td>
-                                <span className="px-2.5 py-1 bg-primary-50 text-primary-700 rounded-md font-bold text-[11px] border border-primary-100">
+                              <td className="py-2 px-2">
+                                <span className="px-2 py-0.5 bg-primary-50 text-primary-700 rounded font-bold text-[10px] border border-primary-100">
                                   {item.extracurricular?.name || '-'}
                                 </span>
                               </td>
-                              <td className="text-center font-black text-slate-800">
+                              <td className="text-center font-black text-slate-800 py-2 px-1">
                                 {avg > 0 ? Number(avg).toFixed(1) : '-'}
                               </td>
-                              <td className="text-center">
+                              <td className="text-center py-2 px-1">
                                 {grade !== '-' ? (
-                                  <span className={`px-2.5 py-0.5 rounded-md font-black text-[11px] ${
+                                  <span className={`px-2 py-0.5 rounded font-black text-[10px] ${
                                     grade === 'A' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                                     grade === 'B' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
                                     'bg-amber-50 text-amber-700 border border-amber-200'
@@ -707,23 +684,23 @@ export default function PendampingDashboard() {
                                   <span className="text-slate-300">-</span>
                                 )}
                               </td>
-                              <td className="text-center">
+                              <td className="text-center py-2 px-1">
                                 {isFilled ? (
-                                  <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full font-bold text-[10px] inline-flex items-center gap-1 border border-emerald-100">
-                                    <CheckCircle2 size={11} /> Lengkap
+                                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full font-bold text-[10px] inline-flex items-center gap-1 border border-emerald-100">
+                                    <CheckCircle2 size={10} /> Lengkap
                                   </span>
                                 ) : (
-                                  <span className="px-2.5 py-0.5 bg-amber-50 text-amber-700 rounded-full font-bold text-[10px] inline-flex items-center gap-1 border border-amber-100">
-                                    <Clock size={11} /> Belum Diisi
+                                  <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full font-bold text-[10px] inline-flex items-center gap-1 border border-amber-100">
+                                    <Clock size={10} /> Belum
                                   </span>
                                 )}
                               </td>
-                              <td className="text-center">
+                              <td className="text-center py-2 px-1">
                                 <button
                                   onClick={() => navigate('/input-nilai')}
-                                  className="btn bg-primary-50 hover:bg-primary-600 hover:text-white text-primary-700 py-1 px-3 text-[11px] font-bold rounded-lg transition-all"
+                                  className="btn bg-primary-50 hover:bg-primary-600 hover:text-white text-primary-700 py-1 px-2.5 text-[10px] font-bold rounded-lg transition-all"
                                 >
-                                  Input Nilai
+                                  Nilai
                                 </button>
                               </td>
                             </tr>
