@@ -406,6 +406,11 @@ export default function KoordinatorDashboard() {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'extracurriculars' },
+        handleRealtimeChange
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'system_settings' },
         handleRealtimeChange
       )

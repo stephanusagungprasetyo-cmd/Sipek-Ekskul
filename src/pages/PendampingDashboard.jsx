@@ -78,14 +78,14 @@ export default function PendampingDashboard() {
   }, [searchTerm])
 
   // Fetch initial extracurriculars
-  useEffect(() => {
-    fetchEkskuls()
-  }, [])
-
-  async function fetchEkskuls() {
+  const fetchEkskuls = useCallback(async () => {
     const { data } = await supabase.from('extracurriculars').select('*').order('name')
     setEkskulList(data || [])
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchEkskuls()
+  }, [fetchEkskuls])
 
   // Fetch Ringkasan & Monitoring Stats saat Tahun Ajaran / Semester berubah
   const fetchOverviewData = useCallback(async () => {
@@ -314,13 +314,21 @@ export default function PendampingDashboard() {
         { event: '*', schema: 'public', table: 'students' },
         handleRealtimeChange
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'extracurriculars' },
+        () => {
+          fetchEkskuls()
+          handleRealtimeChange()
+        }
+      )
       .subscribe()
 
     return () => {
       if (timer) clearTimeout(timer)
       supabase.removeChannel(channel)
     }
-  }, [fetchOverviewData, fetchStudentsScoresTable])
+  }, [fetchOverviewData, fetchStudentsScoresTable, fetchEkskuls])
 
   const handleYearChange = (year) => {
     setSelectedYear(year)

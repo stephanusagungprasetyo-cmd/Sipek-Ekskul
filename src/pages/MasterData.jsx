@@ -19,9 +19,42 @@ import {
   ChevronsRight,
   Plus,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Layers,
+  Check
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+// Helper Bersihkan nama ekskul & deteksi placeholder kosong
+const cleanEkskulName = (raw) => {
+  if (!raw) return null
+  const str = raw.toString().trim()
+  if (!str) return null
+  const lower = str.toLowerCase()
+  if (['-', '--', '---', 'none', 'null', 'tidak ada', 'kosong', 'n/a', 'na', '.'].includes(lower)) {
+    return null
+  }
+  return str
+}
+
+// Format nama ekskul ke Title Case rapi (misal: "paskibra" -> "Paskibra", "modern dance" -> "Modern Dance")
+const formatTitleCase = (str) => {
+  if (!str) return ''
+  const trimmed = str.trim()
+  if (trimmed.length <= 4 && trimmed === trimmed.toUpperCase()) {
+    return trimmed
+  }
+  return trimmed
+    .split(/\s+/)
+    .map(word => {
+      const upper = word.toUpperCase()
+      if (['PMR', 'KIR', 'IT', 'OSIS', 'PASKIBRA'].includes(upper)) {
+        return upper
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    })
+    .join(' ')
+}
 
 export default function MasterData() {
   // Tahun Ajaran State (Default 2026/2027)
@@ -45,6 +78,15 @@ export default function MasterData() {
   const [isUploading, setIsUploading] = useState(false)
   const [importTargetYear, setImportTargetYear] = useState('2026/2027')
   const [ekskuls, setEkskuls] = useState([])
+
+  // Modal Kelola & Tambah Ekskul State
+  const [showEkskulModal, setShowEkskulModal] = useState(false)
+  const [newEkskulName, setNewEkskulName] = useState('')
+  const [isSavingEkskul, setIsSavingEkskul] = useState(false)
+  const [ekskulSearchTerm, setEkskulSearchTerm] = useState('')
+  const [editingEkskulId, setEditingEkskulId] = useState(null)
+  const [editingEkskulName, setEditingEkskulName] = useState('')
+  const [isUpdatingEkskul, setIsUpdatingEkskul] = useState(false)
 
   // Debounce search term
   useEffect(() => {
@@ -135,9 +177,141 @@ export default function MasterData() {
     }
   }, [fetchStudents])
 
+  // Supabase Realtime Listener untuk tabel extracurriculars
+  useEffect(() => {
+    const channel = supabase
+      .channel('ekskuls-master-data-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'extracurriculars' },
+        () => {
+          fetchEkskuls()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
   async function fetchEkskuls() {
     const { data } = await supabase.from('extracurriculars').select('*').order('name')
     setEkskuls(data || [])
+  }
+
+  // Kelola Ekstrakurikuler: Tambah Ekskul Baru Manual
+  const handleCreateEkskul = async (e) => {
+    e?.preventDefault()
+    const cleaned = cleanEkskulName(newEkskulName)
+    if (!cleaned) {
+      toast.error('Masukkan nama ekstrakurikuler yang valid!')
+      return
+    }
+
+    const formattedName = formatTitleCase(cleaned)
+    const exists = ekskuls.some(ek => ek.name.toLowerCase() === formattedName.toLowerCase())
+    if (exists) {
+      toast.error(`Ekskul "${formattedName}" sudah terdaftar!`)
+      return
+    }
+
+    setIsSavingEkskul(true)
+    try {
+      const { error } = await supabase
+        .from('extracurriculars')
+        .insert({ name: formattedName })
+
+      if (error) throw error
+
+      toast.success(`Ekskul "${formattedName}" berhasil ditambahkan!`)
+      setNewEkskulName('')
+      await fetchEkskuls()
+    } catch (err) {
+      console.error(err)
+      toast.error('Gagal menambahkan ekskul: ' + err.message)
+    } finally {
+      setIsSavingEkskul(false)
+    }
+  }
+
+  // Kelola Ekstrakurikuler: Edit Ekskul
+  const handleStartEditEkskul = (ekskul) => {
+    setEditingEkskulId(ekskul.id)
+    setEditingEkskulName(ekskul.name)
+  }
+
+  const handleCancelEditEkskul = () => {
+    setEditingEkskulId(null)
+    setEditingEkskulName('')
+  }
+
+  const handleUpdateEkskul = async (id) => {
+    const cleaned = cleanEkskulName(editingEkskulName)
+    if (!cleaned) {
+      toast.error('Masukkan nama ekskul yang valid!')
+      return
+    }
+
+    const formattedName = formatTitleCase(cleaned)
+    const duplicate = ekskuls.some(ek => ek.id !== id && ek.name.toLowerCase() === formattedName.toLowerCase())
+    if (duplicate) {
+      toast.error(`Ekskul "${formattedName}" sudah terdaftar!`)
+      return
+    }
+
+    setIsUpdatingEkskul(true)
+    try {
+      const { error } = await supabase
+        .from('extracurriculars')
+        .update({ name: formattedName })
+        .eq('id', id)
+
+      if (error) throw error
+
+      toast.success(`Ekskul berhasil diubah menjadi "${formattedName}"!`)
+      setEditingEkskulId(null)
+      setEditingEkskulName('')
+      await fetchEkskuls()
+      fetchStudents()
+    } catch (err) {
+      console.error(err)
+      toast.error('Gagal mengubah nama ekskul: ' + err.message)
+    } finally {
+      setIsUpdatingEkskul(false)
+    }
+  }
+
+  // Kelola Ekstrakurikuler: Hapus Ekskul
+  const handleDeleteEkskul = async (ekskul) => {
+    try {
+      // Cek apakah ekskul ini sedang digunakan oleh siswa
+      const { count: studentCount } = await supabase
+        .from('students')
+        .select('id', { count: 'exact', head: true })
+        .or(`wajib_id.eq.${ekskul.id},pilihan_1_id.eq.${ekskul.id},pilihan_2_id.eq.${ekskul.id},pilihan_3_id.eq.${ekskul.id}`)
+
+      let confirmMsg = `Hapus ekstrakurikuler "${ekskul.name}"?`
+      if (studentCount && studentCount > 0) {
+        confirmMsg = `PERINGATAN: Ekskul "${ekskul.name}" saat ini diikuti oleh ${studentCount} siswa!\n\nJika dihapus, pilihan ekskul pada ${studentCount} siswa tersebut akan menjadi kosong dan riwayat nilainya akan terhapus.\n\nApakah Anda yakin ingin tetap menghapusnya?`
+      }
+
+      if (!window.confirm(confirmMsg)) return
+
+      const { error: delErr } = await supabase
+        .from('extracurriculars')
+        .delete()
+        .eq('id', ekskul.id)
+
+      if (delErr) throw delErr
+
+      toast.success(`Ekskul "${ekskul.name}" berhasil dihapus!`)
+      await fetchEkskuls()
+      fetchStudents()
+    } catch (err) {
+      console.error(err)
+      toast.error('Gagal menghapus ekskul: ' + err.message)
+    }
   }
 
   const handleYearChange = (year) => {
@@ -313,10 +487,73 @@ export default function MasterData() {
           ekskulMap[ek.name.toLowerCase().trim()] = ek.id
         })
 
-        const findEkskulId = (name) => {
-          if (!name) return null
-          const clean = name.toString().toLowerCase().trim()
-          return ekskulMap[clean] || null
+        const newlyCreatedEkskuls = []
+
+        // Resolusi atau Auto-Create Ekskul Baru dari Excel
+        const resolveOrCreateEkskul = async (rawName) => {
+          const cleaned = cleanEkskulName(rawName)
+          if (!cleaned) return null
+
+          const lower = cleaned.toLowerCase()
+          if (ekskulMap[lower]) {
+            return ekskulMap[lower]
+          }
+
+          const formattedName = formatTitleCase(cleaned)
+          const formattedLower = formattedName.toLowerCase()
+          if (ekskulMap[formattedLower]) {
+            return ekskulMap[formattedLower]
+          }
+
+          try {
+            // 1. Cek apakah sudah ada di database Supabase secara case-insensitive
+            const { data: existing } = await supabase
+              .from('extracurriculars')
+              .select('id, name')
+              .ilike('name', formattedName)
+              .maybeSingle()
+
+            if (existing) {
+              ekskulMap[lower] = existing.id
+              ekskulMap[formattedLower] = existing.id
+              return existing.id
+            }
+
+            // 2. Jika belum ada di DB, buat baru secara otomatis!
+            const { data: newEkskul, error: insertErr } = await supabase
+              .from('extracurriculars')
+              .insert({ name: formattedName })
+              .select('id, name')
+              .single()
+
+            if (insertErr) {
+              // Cek barangkali race condition / sudah dibuat
+              const { data: retry } = await supabase
+                .from('extracurriculars')
+                .select('id, name')
+                .ilike('name', formattedName)
+                .maybeSingle()
+              if (retry) {
+                ekskulMap[lower] = retry.id
+                ekskulMap[formattedLower] = retry.id
+                return retry.id
+              }
+              console.warn('Gagal auto-create ekskul:', insertErr)
+              return null
+            }
+
+            if (newEkskul) {
+              ekskulMap[lower] = newEkskul.id
+              ekskulMap[formattedLower] = newEkskul.id
+              if (!newlyCreatedEkskuls.includes(newEkskul.name)) {
+                newlyCreatedEkskuls.push(newEkskul.name)
+              }
+              return newEkskul.id
+            }
+          } catch (err) {
+            console.error('Error auto-resolving ekskul:', err)
+          }
+          return null
         }
 
         let successCount = 0
@@ -330,11 +567,11 @@ export default function MasterData() {
 
           if (!name) continue
 
-          // Resolusi Ekskul dari Kolom 9-Format Baru
-          const wajibId = findEkskulId(row['Ekskul Wajib'])
-          const pil1Id = findEkskulId(row['Ekskul Pilihan 1'] || row['Ekskul'])
-          const pil2Id = findEkskulId(row['Ekskul Pilihan 2'])
-          const pil3Id = findEkskulId(row['Ekskul Pilihan 3'])
+          // Resolusi Ekskul dari Kolom 9-Format Baru (dengan Auto-Create Ekskul Baru)
+          const wajibId = await resolveOrCreateEkskul(row['Ekskul Wajib'])
+          const pil1Id = await resolveOrCreateEkskul(row['Ekskul Pilihan 1'] || row['Ekskul'])
+          const pil2Id = await resolveOrCreateEkskul(row['Ekskul Pilihan 2'])
+          const pil3Id = await resolveOrCreateEkskul(row['Ekskul Pilihan 3'])
 
           // Cek apakah siswa sudah ada di tahun ajaran ini (cocokkan nama, kelas, dan tahun ajaran)
           let existQuery = supabase.from('students').select('*').ilike('name', name)
@@ -394,13 +631,29 @@ export default function MasterData() {
               .not('extracurricular_id', 'in', `(${activeEkskulIds.join(',')})`)
           }
           for (const eid of activeEkskulIds) {
-            await supabase.from('scores').upsert({
-              student_id: studentId,
-              extracurricular_id: eid
-            }, { onConflict: 'student_id,extracurricular_id' })
+            try {
+              await supabase.from('scores').upsert({
+                student_id: studentId,
+                extracurricular_id: eid,
+                semester: 1
+              }, { onConflict: 'student_id,extracurricular_id,semester' })
+            } catch (e) {
+              await supabase.from('scores').upsert({
+                student_id: studentId,
+                extracurricular_id: eid
+              }, { onConflict: 'student_id,extracurricular_id' })
+            }
           }
 
           successCount++
+        }
+
+        if (newlyCreatedEkskuls.length > 0) {
+          toast.success(
+            `Ekskul baru otomatis dibuat (${newlyCreatedEkskuls.length}): ${newlyCreatedEkskuls.join(', ')}`,
+            { duration: 6000 }
+          )
+          await fetchEkskuls()
         }
 
         toast.success(`Berhasil memproses ${successCount} data siswa!`, { id: 'uploading' })
@@ -601,6 +854,10 @@ export default function MasterData() {
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
 
+  const filteredEkskuls = ekskuls.filter(ek => 
+    ek.name.toLowerCase().includes(ekskulSearchTerm.toLowerCase().trim())
+  )
+
   return (
     <div className="space-y-5">
       {/* Top Header */}
@@ -614,6 +871,23 @@ export default function MasterData() {
         
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => {
+              setEkskulSearchTerm('')
+              setNewEkskulName('')
+              setEditingEkskulId(null)
+              setShowEkskulModal(true)
+            }}
+            className="btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-1.5 text-xs font-bold py-2 px-3"
+            title="Kelola & Tambah Ekstrakurikuler"
+          >
+            <Layers size={14} />
+            <span>Kelola Ekskul</span>
+            <span className="ml-0.5 bg-indigo-800/60 text-indigo-100 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+              {ekskuls.length}
+            </span>
+          </button>
+
           <button
             onClick={handleDownloadTemplate}
             className="btn bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-sm flex items-center gap-1.5 text-xs font-bold py-2 px-3"
@@ -1091,6 +1365,167 @@ export default function MasterData() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Kelola & Tambah Ekskul */}
+      {showEkskulModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Layers size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Kelola Ekstrakurikuler</h3>
+                  <p className="text-[11px] text-slate-400">Master Ekskul Terdaftar untuk Semua Role</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowEkskulModal(false)} 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {/* Form Tambah Ekskul Baru */}
+              <form onSubmit={handleCreateEkskul} className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-3.5 space-y-2">
+                <label className="block text-xs font-bold text-indigo-900 uppercase tracking-wider">
+                  + Tambah Ekskul Baru
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newEkskulName}
+                    onChange={(e) => setNewEkskulName(e.target.value)}
+                    placeholder="Contoh: Panahan, Robotika, Manga..."
+                    className="input-field text-xs py-1.5 flex-1 bg-white"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSavingEkskul || !newEkskulName.trim()}
+                    className="btn bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1.5 px-3 shrink-0 flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {isSavingEkskul ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                    <span>Tambah</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-indigo-600/80">
+                  Ekskul yang ditambahkan di sini langsung muncul di dropdown input nilai Pelatih, Koordinator, Pendamping, dan Admin.
+                </p>
+              </form>
+
+              {/* Search & List Header */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Daftar Ekskul ({ekskuls.length})
+                  </span>
+                  <div className="relative w-44">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+                    <input
+                      type="text"
+                      placeholder="Cari ekskul..."
+                      value={ekskulSearchTerm}
+                      onChange={(e) => setEkskulSearchTerm(e.target.value)}
+                      className="input-field pl-7 py-1 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Ekskuls List */}
+                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                  {filteredEkskuls.length > 0 ? (
+                    filteredEkskuls.map((ek, idx) => (
+                      <div
+                        key={ek.id}
+                        className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-all text-xs"
+                      >
+                        {editingEkskulId === ek.id ? (
+                          <div className="flex items-center gap-1.5 flex-1 mr-2">
+                            <input
+                              type="text"
+                              value={editingEkskulName}
+                              onChange={(e) => setEditingEkskulName(e.target.value)}
+                              className="input-field text-xs py-1 flex-1 bg-white"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleUpdateEkskul(ek.id)
+                                if (e.key === 'Escape') handleCancelEditEkskul()
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateEkskul(ek.id)}
+                              disabled={isUpdatingEkskul}
+                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                              title="Simpan"
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelEditEkskul}
+                              className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"
+                              title="Batal"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 text-center text-slate-400 font-semibold text-[11px]">
+                                {idx + 1}.
+                              </span>
+                              <span className="font-bold text-slate-800">{ek.name}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditEkskul(ek)}
+                                className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                title="Edit Nama Ekskul"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEkskul(ek)}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                title="Hapus Ekskul"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-6 text-center text-slate-400 text-xs">
+                      Tidak ada ekstrakurikuler yang sesuai dengan pencarian.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowEkskulModal(false)}
+                className="btn btn-secondary text-xs font-bold py-1.5 px-4"
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}

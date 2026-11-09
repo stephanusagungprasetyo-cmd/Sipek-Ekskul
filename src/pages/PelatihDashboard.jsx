@@ -113,18 +113,17 @@ export default function PelatihDashboard() {
   }, [fetchLockStatus])
 
   // Fetch list of extracurriculars on mount
-  useEffect(() => {
-    async function fetchEkskuls() {
-      const { data, error } = await supabase.from('extracurriculars').select('*').order('name')
-      if (!error && data) {
-        setEkskuls(data)
-        if (!selectedEkskul && data.length > 0) {
-          setSelectedEkskul(data[0].id)
-        }
-      }
+  const fetchEkskuls = useCallback(async () => {
+    const { data, error } = await supabase.from('extracurriculars').select('*').order('name')
+    if (!error && data) {
+      setEkskuls(data)
+      setSelectedEkskul(prev => prev || (data.length > 0 ? data[0].id : ''))
     }
-    fetchEkskuls()
   }, [])
+
+  useEffect(() => {
+    fetchEkskuls()
+  }, [fetchEkskuls])
 
   // Fetch paginated scores data based on selectedEkskul, selectedYear, selectedSemester, and pagination
   const fetchData = useCallback(async () => {
@@ -276,6 +275,13 @@ export default function PelatihDashboard() {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'extracurriculars' },
+        () => {
+          fetchEkskuls()
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'system_settings' },
         () => {
           fetchLockStatus()
@@ -286,7 +292,7 @@ export default function PelatihDashboard() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchData, fetchLockStatus])
+  }, [fetchData, fetchEkskuls, fetchLockStatus])
 
   // Status apakah penilaian saat ini terkunci
   const isLocked = selectedSemester === '1' && isSemester1Locked
