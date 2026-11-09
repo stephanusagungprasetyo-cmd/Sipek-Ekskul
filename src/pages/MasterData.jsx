@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { 
@@ -78,6 +78,7 @@ export default function MasterData() {
   const [isUploading, setIsUploading] = useState(false)
   const [importTargetYear, setImportTargetYear] = useState('2026/2027')
   const [ekskuls, setEkskuls] = useState([])
+  const [selectedEkskulFilter, setSelectedEkskulFilter] = useState('all')
 
   // Modal Kelola & Tambah Ekskul State
   const [showEkskulModal, setShowEkskulModal] = useState(false)
@@ -87,6 +88,10 @@ export default function MasterData() {
   const [editingEkskulId, setEditingEkskulId] = useState(null)
   const [editingEkskulName, setEditingEkskulName] = useState('')
   const [isUpdatingEkskul, setIsUpdatingEkskul] = useState(false)
+
+  // Ref untuk mengontrol proses import & debounce realtime
+  const isImportingRef = useRef(false)
+  const realtimeTimeoutRef = useRef(null)
 
   // Debounce search term
   useEffect(() => {
@@ -101,8 +106,8 @@ export default function MasterData() {
     fetchEkskuls()
   }, [])
 
-  const fetchStudents = useCallback(async () => {
-    setLoading(true)
+  const fetchStudents = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true)
     try {
       const from = (page - 1) * pageSize
       const to = from + pageSize - 1
@@ -122,6 +127,11 @@ export default function MasterData() {
         query = query.or('academic_year.eq.2025/2026,academic_year.is.null')
       } else {
         query = query.eq('academic_year', selectedYear)
+      }
+
+      // Filter Ekstrakurikuler jika dipilih spesifik
+      if (selectedEkskulFilter !== 'all') {
+        query = query.or(`wajib_id.eq.${selectedEkskulFilter},pilihan_1_id.eq.${selectedEkskulFilter},pilihan_2_id.eq.${selectedEkskulFilter},pilihan_3_id.eq.${selectedEkskulFilter}`)
       }
 
       // Filter Pencarian
@@ -151,9 +161,9 @@ export default function MasterData() {
       console.error(err)
       toast.error('Gagal mengambil data siswa: ' + err.message)
     } finally {
-      setLoading(false)
+      if (!isSilent) setLoading(false)
     }
-  }, [selectedYear, page, pageSize, debouncedSearch, sortConfig])
+  }, [selectedYear, selectedEkskulFilter, page, pageSize, debouncedSearch, sortConfig])
 
   useEffect(() => {
     fetchStudents()
@@ -167,12 +177,20 @@ export default function MasterData() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'students' },
         () => {
-          fetchStudents()
+          // Jangan re-fetch jika proses import Excel sedang berlangsung
+          if (isImportingRef.current) return
+
+          // Debounce pembaruan agar jika banyak perubahan beruntun, hanya refresh 1 kali
+          if (realtimeTimeoutRef.current) clearTimeout(realtimeTimeoutRef.current)
+          realtimeTimeoutRef.current = setTimeout(() => {
+            fetchStudents(true) // Silent mode: cegah kedipan halaman/spinner penuh
+          }, 1000)
         }
       )
       .subscribe()
 
     return () => {
+      if (realtimeTimeoutRef.current) clearTimeout(realtimeTimeoutRef.current)
       supabase.removeChannel(channel)
     }
   }, [fetchStudents])
@@ -185,6 +203,7 @@ export default function MasterData() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'extracurriculars' },
         () => {
+          if (isImportingRef.current) return
           fetchEkskuls()
         }
       )
@@ -320,6 +339,11 @@ export default function MasterData() {
     setPage(1)
   }
 
+  const handleEkskulFilterChange = (ekskulId) => {
+    setSelectedEkskulFilter(ekskulId)
+    setPage(1)
+  }
+
   const requestSort = (key) => {
     let direction = 'asc'
     if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'
@@ -416,12 +440,17 @@ export default function MasterData() {
         query = query.eq('academic_year', selectedYear)
       }
 
+      // Filter Ekstrakurikuler jika dipilih spesifik
+      if (selectedEkskulFilter !== 'all') {
+        query = query.or(`wajib_id.eq.${selectedEkskulFilter},pilihan_1_id.eq.${selectedEkskulFilter},pilihan_2_id.eq.${selectedEkskulFilter},pilihan_3_id.eq.${selectedEkskulFilter}`)
+      }
+
       const { data: allStudents, error } = await query
 
       if (error) throw error
 
       if (!allStudents || allStudents.length === 0) {
-        toast.error(`Tidak ada data siswa untuk Tahun Ajaran ${selectedYear}`, { id: 'exporting' })
+        toast.error(`Tidak ada data siswa untuk kriteria yang dipilih`, { id: 'exporting' })
         return
       }
 
@@ -436,6 +465,9 @@ export default function MasterData() {
         'Ekskul Pilihan 2': student.pilihan2?.name || '-',
         'Ekskul Pilihan 3': student.pilihan3?.name || '-'
       }))
+
+      const activeEkskulObj = ekskuls.find(e => e.id === selectedEkskulFilter)
+      const ekskulSuffix = activeEkskulObj ? `_${activeEkskulObj.name.replace(/\s+/g, '_')}` : ''
 
       const worksheet = XLSX.utils.json_to_sheet(excelData)
       const workbook = XLSX.utils.book_new()
@@ -453,20 +485,22 @@ export default function MasterData() {
         { wch: 18 }
       ]
 
-      XLSX.writeFile(workbook, `Data_Siswa_TA_${selectedYear.replace('/', '_')}.xlsx`)
-      toast.success(`Data siswa T.A. ${selectedYear} berhasil diekspor!`, { id: 'exporting' })
+      XLSX.writeFile(workbook, `Data_Siswa_TA_${selectedYear.replace('/', '_')}${ekskulSuffix}.xlsx`)
+      toast.success(`Data siswa T.A. ${selectedYear} (${allStudents.length} siswa) berhasil diekspor!`, { id: 'exporting' })
     } catch (err) {
       console.error(err)
       toast.error('Gagal mengekspor data: ' + err.message, { id: 'exporting' })
     }
   }
 
-  // Import File Excel (Mendukung Format 9 Kolom Baru & Format Lama)
+  // Import File Excel (Ultra Fast True Bulk Import dengan Mute Realtime)
   const handleFileUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
 
     setIsUploading(true)
+    isImportingRef.current = true // KUNCI: Mute Realtime Listener selama import berlangsung!
+
     const reader = new FileReader()
 
     reader.onload = async (evt) => {
@@ -479,185 +513,254 @@ export default function MasterData() {
 
         if (data.length === 0) throw new Error('File Excel kosong atau format tidak sesuai')
 
-        toast.loading(`Memproses import ${data.length} baris data...`, { id: 'uploading' })
-        
-        // Buat map ekstrakurikuler case-insensitive untuk pencarian cepat ID
+        toast.loading(`Mempersiapkan import ${data.length} baris data...`, { id: 'uploading' })
+
+        // 1. Cek kapabilitas tabel scores (kolom semester) sekali saja
+        let hasSemesterCol = false
+        try {
+          const { error: testErr } = await supabase.from('scores').select('semester').limit(1)
+          hasSemesterCol = !testErr
+        } catch (e) {
+          hasSemesterCol = false
+        }
+
+        // 2. Pre-fetch seluruh master ekstrakurikuler
+        const { data: currentEkskuls } = await supabase.from('extracurriculars').select('id, name')
         const ekskulMap = {}
-        ekskuls.forEach(ek => {
+        ;(currentEkskuls || ekskuls).forEach(ek => {
           ekskulMap[ek.name.toLowerCase().trim()] = ek.id
         })
 
+        // 3. Pre-create Ekskul Baru yang belum ada secara kolektif
         const newlyCreatedEkskuls = []
+        const newEkskulNamesToCreate = new Set()
 
-        // Resolusi atau Auto-Create Ekskul Baru dari Excel
-        const resolveOrCreateEkskul = async (rawName) => {
-          const cleaned = cleanEkskulName(rawName)
-          if (!cleaned) return null
-
-          const lower = cleaned.toLowerCase()
-          if (ekskulMap[lower]) {
-            return ekskulMap[lower]
-          }
-
-          const formattedName = formatTitleCase(cleaned)
-          const formattedLower = formattedName.toLowerCase()
-          if (ekskulMap[formattedLower]) {
-            return ekskulMap[formattedLower]
-          }
-
-          try {
-            // 1. Cek apakah sudah ada di database Supabase secara case-insensitive
-            const { data: existing } = await supabase
-              .from('extracurriculars')
-              .select('id, name')
-              .ilike('name', formattedName)
-              .maybeSingle()
-
-            if (existing) {
-              ekskulMap[lower] = existing.id
-              ekskulMap[formattedLower] = existing.id
-              return existing.id
-            }
-
-            // 2. Jika belum ada di DB, buat baru secara otomatis!
-            const { data: newEkskul, error: insertErr } = await supabase
-              .from('extracurriculars')
-              .insert({ name: formattedName })
-              .select('id, name')
-              .single()
-
-            if (insertErr) {
-              // Cek barangkali race condition / sudah dibuat
-              const { data: retry } = await supabase
-                .from('extracurriculars')
-                .select('id, name')
-                .ilike('name', formattedName)
-                .maybeSingle()
-              if (retry) {
-                ekskulMap[lower] = retry.id
-                ekskulMap[formattedLower] = retry.id
-                return retry.id
+        data.forEach(row => {
+          ;['Ekskul Wajib', 'Ekskul Pilihan 1', 'Ekskul', 'Ekskul Pilihan 2', 'Ekskul Pilihan 3'].forEach(col => {
+            const cleaned = cleanEkskulName(row[col])
+            if (cleaned) {
+              const formatted = formatTitleCase(cleaned)
+              if (!ekskulMap[formatted.toLowerCase()]) {
+                newEkskulNamesToCreate.add(formatted)
               }
-              console.warn('Gagal auto-create ekskul:', insertErr)
-              return null
             }
+          })
+        })
 
-            if (newEkskul) {
-              ekskulMap[lower] = newEkskul.id
-              ekskulMap[formattedLower] = newEkskul.id
-              if (!newlyCreatedEkskuls.includes(newEkskul.name)) {
-                newlyCreatedEkskuls.push(newEkskul.name)
-              }
-              return newEkskul.id
-            }
-          } catch (err) {
-            console.error('Error auto-resolving ekskul:', err)
+        if (newEkskulNamesToCreate.size > 0) {
+          const insertList = Array.from(newEkskulNamesToCreate).map(name => ({ name }))
+          const { data: createdEkskuls } = await supabase
+            .from('extracurriculars')
+            .insert(insertList)
+            .select('id, name')
+
+          if (createdEkskuls) {
+            createdEkskuls.forEach(ek => {
+              ekskulMap[ek.name.toLowerCase().trim()] = ek.id
+              newlyCreatedEkskuls.push(ek.name)
+            })
+          } else {
+            const { data: refetch } = await supabase.from('extracurriculars').select('id, name')
+            refetch?.forEach(ek => {
+              ekskulMap[ek.name.toLowerCase().trim()] = ek.id
+            })
           }
-          return null
         }
 
-        let successCount = 0
+        const findEkskulId = (name) => {
+          if (!name) return null
+          const cleaned = cleanEkskulName(name)
+          if (!cleaned) return null
+          return ekskulMap[cleaned.toLowerCase()] || ekskulMap[formatTitleCase(cleaned).toLowerCase()] || null
+        }
 
-        for (const row of data) {
+        // 4. Pre-fetch seluruh siswa yang sudah ada pada tahun ajaran target (1 query cepat)
+        let studentsPreQuery = supabase
+          .from('students')
+          .select('id, name, class_name, academic_year, wajib_id, pilihan_1_id, pilihan_2_id, pilihan_3_id')
+          .limit(10000)
+
+        if (importTargetYear === '2025/2026') {
+          studentsPreQuery = studentsPreQuery.or('academic_year.eq.2025/2026,academic_year.is.null')
+        } else {
+          studentsPreQuery = studentsPreQuery.eq('academic_year', importTargetYear)
+        }
+
+        const { data: existingStudentsList } = await studentsPreQuery
+        const studentMap = new Map()
+        existingStudentsList?.forEach(s => {
+          const nameKey = s.name.trim().toLowerCase()
+          const classKey = (s.class_name || '').trim().toLowerCase()
+          studentMap.set(`${nameKey}__${classKey}`, s)
+          if (!studentMap.has(nameKey)) {
+            studentMap.set(nameKey, s)
+          }
+        })
+
+        // 5. Klasifikasikan baris Excel menjadi toUpdate dan toInsert
+        const studentsToUpdate = []
+        const studentsToInsert = []
+        const studentActiveEkskuls = []
+        const seenInFile = new Set()
+
+        data.forEach(row => {
           const name = (row['Nama Lengkap Siswa'] || row['Nama Siswa'] || row['Nama'] || '').toString().trim()
+          if (!name) return
+
           const genderRaw = (row['JK'] || row['Jenis Kelamin'] || '').toString().trim().toUpperCase()
           const gender = genderRaw.startsWith('P') ? 'P' : 'L'
           const className = (row['Kelas'] || '').toString().trim()
           const rowYear = (row['Tahun Ajaran'] || importTargetYear || selectedYear).toString().trim()
 
-          if (!name) continue
+          const fileKey = `${name.toLowerCase()}__${className.toLowerCase()}`
+          if (seenInFile.has(fileKey)) return
+          seenInFile.add(fileKey)
 
-          // Resolusi Ekskul dari Kolom 9-Format Baru (dengan Auto-Create Ekskul Baru)
-          const wajibId = await resolveOrCreateEkskul(row['Ekskul Wajib'])
-          const pil1Id = await resolveOrCreateEkskul(row['Ekskul Pilihan 1'] || row['Ekskul'])
-          const pil2Id = await resolveOrCreateEkskul(row['Ekskul Pilihan 2'])
-          const pil3Id = await resolveOrCreateEkskul(row['Ekskul Pilihan 3'])
+          const wajibId = findEkskulId(row['Ekskul Wajib'])
+          const pil1Id = findEkskulId(row['Ekskul Pilihan 1'] || row['Ekskul'])
+          const pil2Id = findEkskulId(row['Ekskul Pilihan 2'])
+          const pil3Id = findEkskulId(row['Ekskul Pilihan 3'])
 
-          // Cek apakah siswa sudah ada di tahun ajaran ini (cocokkan nama, kelas, dan tahun ajaran)
-          let existQuery = supabase.from('students').select('*').ilike('name', name)
-          if (className) {
-            existQuery = existQuery.eq('class_name', className)
-          }
-          if (rowYear === '2025/2026') {
-            existQuery = existQuery.or('academic_year.eq.2025/2026,academic_year.is.null')
-          } else {
-            existQuery = existQuery.eq('academic_year', rowYear)
-          }
+          const activeEkskulIds = [wajibId, pil1Id, pil2Id, pil3Id].filter(Boolean)
 
-          const { data: existRows } = await existQuery.limit(1)
-          const exist = existRows && existRows.length > 0 ? existRows[0] : null
-
-          let studentId = null
+          const nameKey = name.toLowerCase()
+          const classKey = className.toLowerCase()
+          const exist = studentMap.get(`${nameKey}__${classKey}`) || studentMap.get(nameKey)
 
           if (exist) {
-            studentId = exist.id
-            const updatePayload = {
+            studentsToUpdate.push({
+              id: exist.id,
+              name,
+              gender,
               class_name: className || exist.class_name,
               academic_year: rowYear,
               wajib_id: wajibId || null,
               pilihan_1_id: pil1Id || null,
               pilihan_2_id: pil2Id || null,
               pilihan_3_id: pil3Id || null
-            }
-
-            const { error: updateErr } = await supabase.from('students').update(updatePayload).eq('id', studentId)
-            if (updateErr) console.warn('Warning saat update siswa:', updateErr)
+            })
+            studentActiveEkskuls.push({
+              studentId: exist.id,
+              activeEkskulIds,
+              exist
+            })
           } else {
-            const insertPayload = {
-              name,
-              gender,
-              class_name: className || '-',
-              academic_year: rowYear,
-              wajib_id: wajibId || null,
-              pilihan_1_id: pil1Id || null,
-              pilihan_2_id: pil2Id || null,
-              pilihan_3_id: pil3Id || null
-            }
-
-            const { data: created, error: createErr } = await supabase
-              .from('students')
-              .insert(insertPayload)
-              .select('id')
-              .single()
-
-            if (createErr) throw createErr
-            studentId = created?.id
+            studentsToInsert.push({
+              studentData: {
+                name,
+                gender,
+                class_name: className || '-',
+                academic_year: rowYear,
+                wajib_id: wajibId || null,
+                pilihan_1_id: pil1Id || null,
+                pilihan_2_id: pil2Id || null,
+                pilihan_3_id: pil3Id || null
+              },
+              activeEkskulIds
+            })
           }
+        })
 
-          // Sinkronisasi record scores: bersihkan ekskul lama yang sudah tidak aktif & upsert yang aktif
-          const activeEkskulIds = [wajibId, pil1Id, pil2Id, pil3Id].filter(Boolean)
-          if (exist) {
-            if (activeEkskulIds.length > 0) {
-              await supabase.from('scores')
-                .delete()
-                .eq('student_id', studentId)
-                .not('extracurricular_id', 'in', `(${activeEkskulIds.join(',')})`)
-            } else {
-              await supabase.from('scores')
-                .delete()
-                .eq('student_id', studentId)
-            }
-          }
+        const totalToProcess = studentsToUpdate.length + studentsToInsert.length
+        toast.loading(`Memproses sinkronisasi ${totalToProcess} siswa...`, { id: 'uploading' })
 
-          // Upsert scores dengan fallback skema & proteksi nilai lama agar tidak tertindih (ignoreDuplicates: true)
-          for (const eid of activeEkskulIds) {
-            const { error: upsertSemErr } = await supabase.from('scores').upsert({
-              student_id: studentId,
-              extracurricular_id: eid,
-              semester: 1
-            }, { onConflict: 'student_id,extracurricular_id,semester', ignoreDuplicates: true })
+        // 6. True Bulk Upsert Siswa yang sudah ada (Batch 100 per query)
+        const BATCH_SIZE = 100
+        for (let i = 0; i < studentsToUpdate.length; i += BATCH_SIZE) {
+          const batch = studentsToUpdate.slice(i, i + BATCH_SIZE)
+          const { error } = await supabase.from('students').upsert(batch, { onConflict: 'id' })
+          if (error) throw error
 
-            if (upsertSemErr) {
-              await supabase.from('scores').upsert({
-                student_id: studentId,
-                extracurricular_id: eid
-              }, { onConflict: 'student_id,extracurricular_id', ignoreDuplicates: true })
-            }
-          }
-
-          successCount++
+          const processed = Math.min(i + BATCH_SIZE, studentsToUpdate.length)
+          const pct = Math.round((processed / totalToProcess) * 40)
+          toast.loading(`Memperbarui data siswa (${pct}%)...`, { id: 'uploading' })
         }
 
+        // 7. True Bulk Insert Siswa Baru (Batch 100 per query)
+        for (let i = 0; i < studentsToInsert.length; i += BATCH_SIZE) {
+          const batch = studentsToInsert.slice(i, i + BATCH_SIZE)
+          const insertPayloads = batch.map(b => b.studentData)
+          const { data: createdList, error } = await supabase
+            .from('students')
+            .insert(insertPayloads)
+            .select('id, name, class_name')
+
+          if (error) throw error
+
+          createdList?.forEach((s, idx) => {
+            const item = batch[idx]
+            studentActiveEkskuls.push({
+              studentId: s.id,
+              activeEkskulIds: item.activeEkskulIds,
+              exist: null
+            })
+          })
+
+          const processed = studentsToUpdate.length + Math.min(i + BATCH_SIZE, studentsToInsert.length)
+          const pct = Math.round((processed / totalToProcess) * 40)
+          toast.loading(`Menyimpan data siswa baru (${pct}%)...`, { id: 'uploading' })
+        }
+
+        // 8. Kumpulkan seluruh record scores
+        const allScoreRows = []
+        const droppedScoreDeletions = []
+
+        studentActiveEkskuls.forEach(({ studentId, activeEkskulIds, exist }) => {
+          if (!studentId) return
+
+          // Cek jika siswa melepas ekskul lama
+          if (exist) {
+            const oldEkskuls = [exist.wajib_id, exist.pilihan_1_id, exist.pilihan_2_id, exist.pilihan_3_id].filter(Boolean)
+            const dropped = oldEkskuls.filter(eid => !activeEkskulIds.includes(eid))
+            if (dropped.length > 0) {
+              droppedScoreDeletions.push({ studentId, droppedIds: dropped })
+            }
+          }
+
+          activeEkskulIds.forEach(eid => {
+            allScoreRows.push(
+              hasSemesterCol
+                ? { student_id: studentId, extracurricular_id: eid, semester: 1 }
+                : { student_id: studentId, extracurricular_id: eid }
+            )
+          })
+        })
+
+        // Cegah duplikat key scores dalam 1 batch
+        const uniqueScoresMap = new Map()
+        allScoreRows.forEach(row => {
+          const key = hasSemesterCol
+            ? `${row.student_id}_${row.extracurricular_id}_${row.semester}`
+            : `${row.student_id}_${row.extracurricular_id}`
+          if (!uniqueScoresMap.has(key)) {
+            uniqueScoresMap.set(key, row)
+          }
+        })
+        const uniqueScoreRows = Array.from(uniqueScoresMap.values())
+
+        // 9. True Bulk Upsert Scores (Batch 200 per query)
+        const SCORE_CHUNK = 200
+        for (let i = 0; i < uniqueScoreRows.length; i += SCORE_CHUNK) {
+          const chunk = uniqueScoreRows.slice(i, i + SCORE_CHUNK)
+          const { error } = await supabase.from('scores').upsert(chunk, {
+            onConflict: hasSemesterCol ? 'student_id,extracurricular_id,semester' : 'student_id,extracurricular_id',
+            ignoreDuplicates: true
+          })
+          if (error) {
+            console.warn('Batch score upsert warning:', error.message)
+          }
+          const pct = 40 + Math.round(((i + chunk.length) / uniqueScoreRows.length) * 55)
+          toast.loading(`Sinkronisasi nilai ekskul (${pct}%)...`, { id: 'uploading' })
+        }
+
+        // 10. Bersihkan scores ekskul yang dilepas siswa
+        if (droppedScoreDeletions.length > 0) {
+          await Promise.all(droppedScoreDeletions.map(d =>
+            supabase.from('scores').delete().eq('student_id', d.studentId).in('extracurricular_id', d.droppedIds)
+          ))
+        }
+
+        // 11. Selesai
         if (newlyCreatedEkskuls.length > 0) {
           toast.success(
             `Ekskul baru otomatis dibuat (${newlyCreatedEkskuls.length}): ${newlyCreatedEkskuls.join(', ')}`,
@@ -666,15 +769,21 @@ export default function MasterData() {
           await fetchEkskuls()
         }
 
-        toast.success(`Berhasil memproses ${successCount} data siswa!`, { id: 'uploading' })
+        toast.success(`Berhasil mengimpor ${totalToProcess} data siswa!`, { id: 'uploading' })
         setShowImportModal(false)
-        setSelectedYear(importTargetYear)
-        setPage(1)
-        fetchStudents()
+
+        if (selectedYear !== importTargetYear) {
+          setSelectedYear(importTargetYear)
+          setPage(1)
+        } else {
+          setPage(1)
+          await fetchStudents()
+        }
       } catch (err) {
         console.error(err)
         toast.error('Gagal import: ' + err.message, { id: 'uploading' })
       } finally {
+        isImportingRef.current = false
         setIsUploading(false)
         e.target.value = ''
       }
@@ -934,23 +1043,46 @@ export default function MasterData() {
         </div>
       </div>
 
-      {/* Control Bar: Tahun Ajaran Dropdown, Search & PageSize */}
-      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Tahun Ajaran Dropdown (Revisi Poin 1) */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
-            <Calendar size={14} className="text-primary-600" />
-            Tahun Ajaran:
-          </label>
-          <select
-            value={selectedYear}
-            onChange={(e) => handleYearChange(e.target.value)}
-            className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[140px]"
-          >
-            <option value="2026/2027">2026/2027</option>
-            <option value="2025/2026">2025/2026</option>
-            <option value="2027/2028">2027/2028</option>
-          </select>
+      {/* Control Bar: Tahun Ajaran Dropdown, Filter Ekskul, Search & PageSize */}
+      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/80 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        {/* Dropdowns Group: Tahun Ajaran & Filter Ekskul */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Tahun Ajaran Dropdown (Revisi Poin 1) */}
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0 flex items-center gap-1">
+              <Calendar size={14} className="text-primary-600" />
+              T.A:
+            </label>
+            <select
+              value={selectedYear}
+              onChange={(e) => handleYearChange(e.target.value)}
+              className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[125px]"
+            >
+              <option value="2026/2027">2026/2027</option>
+              <option value="2025/2026">2025/2026</option>
+              <option value="2027/2028">2027/2028</option>
+            </select>
+          </div>
+
+          {/* Filter Ekskul Dropdown */}
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0 flex items-center gap-1">
+              <Layers size={14} className="text-primary-600" />
+              Ekskul:
+            </label>
+            <select
+              value={selectedEkskulFilter}
+              onChange={(e) => handleEkskulFilterChange(e.target.value)}
+              className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[160px] max-w-[220px] truncate"
+            >
+              <option value="all">Semua Ekskul ({ekskuls.length})</option>
+              {ekskuls.map(ek => (
+                <option key={ek.id} value={ek.id}>
+                  {ek.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Search Input & Page Size (Pilihan: 10, 20, 50 - Revisi Tambahan) */}
@@ -993,15 +1125,25 @@ export default function MasterData() {
       </div>
 
       {/* Main Compact Table (Ringkas, minim scroll kanan-kiri) */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
-        {loading ? (
+      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden relative min-h-[300px]">
+        {loading && students.length === 0 ? (
           <div className="p-16 text-center text-slate-400 flex flex-col items-center gap-3">
             <Loader2 className="animate-spin text-primary-600" size={28} />
             <p className="text-xs font-medium">Memuat data siswa Tahun Ajaran {selectedYear}...</p>
           </div>
-        ) : students.length > 0 ? (
+        ) : (
           <>
-            <div className="overflow-x-auto">
+            {loading && (
+              <div className="absolute inset-0 bg-white/50 backdrop-blur-[0.5px] z-10 flex items-center justify-center transition-all">
+                <div className="bg-white/95 shadow-lg border border-slate-200 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <Loader2 className="animate-spin text-primary-600" size={14} />
+                  <span>Memperbarui data...</span>
+                </div>
+              </div>
+            )}
+            {students.length > 0 ? (
+              <>
+                <div className="overflow-x-auto">
               <table className="table-modern w-full text-xs">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-100 font-bold text-slate-600">
@@ -1123,7 +1265,9 @@ export default function MasterData() {
             </p>
           </div>
         )}
-      </div>
+      </>
+    )}
+  </div>
 
       {/* Modal Import Excel 9 Kolom dengan Pilihan Tahun Ajaran */}
       {showImportModal && (

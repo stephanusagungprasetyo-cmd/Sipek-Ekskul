@@ -175,7 +175,7 @@ export default function PendampingDashboard() {
       setSummaryStats(prev => ({ ...prev, loading: false }))
       setLoadingMonitoring(false)
     }
-  }, [selectedYear])
+  }, [selectedYear, selectedSemester])
 
   useEffect(() => {
     fetchOverviewData()
