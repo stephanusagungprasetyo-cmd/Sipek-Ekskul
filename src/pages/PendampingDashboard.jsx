@@ -1,24 +1,24 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { 
-  Users, 
-  Clock, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Loader2, 
-  Search, 
-  Calendar, 
-  ArrowRight, 
-  PenTool, 
-  BarChart3, 
-  GraduationCap, 
-  ChevronLeft, 
-  ChevronRight, 
-  ChevronsLeft, 
-  ChevronsRight, 
-  ShieldCheck, 
-  Layers, 
+import {
+  Users,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
+  Search,
+  Calendar,
+  ArrowRight,
+  PenTool,
+  BarChart3,
+  GraduationCap,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ShieldCheck,
+  Layers,
   X,
   ArrowUpDown
 } from 'lucide-react'
@@ -37,7 +37,7 @@ export default function PendampingDashboard() {
   // Filter Utama: Tahun Ajaran & Semester
   const [selectedYear, setSelectedYear] = useState('2026/2027')
   const [selectedSemester, setSelectedSemester] = useState('1') // '1' atau '2'
-  
+
   // Tab View Aktif: 'students' (Tabel Nilai Siswa) atau 'monitoring' (Progres Ekskul)
   const [activeTab, setActiveTab] = useState('students')
 
@@ -114,7 +114,24 @@ export default function PendampingDashboard() {
           query = query.eq('student.academic_year', selectedYear)
         }
 
-        const { data, error } = await query
+        let { data, error } = await query
+
+        if (error) {
+          let fbQuery = supabase
+            .from('scores')
+            .select('extracurricular_id, average_score, att_1, student:students!inner(academic_year)')
+            .range(p * batchSize, (p + 1) * batchSize - 1)
+
+          if (selectedYear === '2025/2026') {
+            fbQuery = fbQuery.or('academic_year.eq.2025/2026,academic_year.is.null', { foreignTable: 'students' })
+          } else {
+            fbQuery = fbQuery.eq('student.academic_year', selectedYear)
+          }
+
+          const fbRes = await fbQuery
+          data = fbRes.data
+          error = fbRes.error
+        }
 
         if (error || !data || data.length < batchSize) hasMore = false
         if (data) allScores = [...allScores, ...data]
@@ -122,7 +139,7 @@ export default function PendampingDashboard() {
       }
 
       // Filter scores sesuai semester yang dipilih
-      const semesterFilteredScores = allScores.filter(s => 
+      const semesterFilteredScores = allScores.filter(s =>
         s.semester === undefined || s.semester === null || s.semester === Number(selectedSemester)
       )
 
@@ -231,8 +248,8 @@ export default function PendampingDashboard() {
 
       let { data, count, error } = await query
 
-      // Fallback jika kolom semester belum ada di database
-      if (error && error.message && error.message.includes('semester')) {
+      // Fallback jika skema database (semester) belum ada di remote database
+      if (error) {
         let fallbackQuery = supabase
           .from('scores')
           .select(`
@@ -390,21 +407,19 @@ export default function PendampingDashboard() {
           <div className="inline-flex p-0.5 bg-slate-100 rounded-xl">
             <button
               onClick={() => handleSemesterChange('1')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                selectedSemester === '1'
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${selectedSemester === '1'
                   ? 'bg-primary-600 text-white shadow-sm font-extrabold'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               Semester 1 (Ganjil)
             </button>
             <button
               onClick={() => handleSemesterChange('2')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                selectedSemester === '2'
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${selectedSemester === '2'
                   ? 'bg-primary-600 text-white shadow-sm font-extrabold'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               Semester 2 (Genap)
             </button>
@@ -480,7 +495,7 @@ export default function PendampingDashboard() {
         <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight mb-3">Akses Cepat Pendamping</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {/* Card Button 1: Input Nilai */}
-          <div 
+          <div
             onClick={() => navigate('/input-nilai')}
             className="group bg-white hover:bg-gradient-to-br hover:from-white hover:to-primary-50/50 rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-sm hover:shadow-xl hover:border-primary-300 transition-all duration-300 cursor-pointer flex flex-col justify-between"
           >
@@ -510,15 +525,14 @@ export default function PendampingDashboard() {
           </div>
 
           {/* Card Button 2: Monitoring Progres Ekskul */}
-          <div 
+          <div
             onClick={() => {
               setActiveTab('monitoring')
               const el = document.getElementById('pendamping-content')
               if (el) el.scrollIntoView({ behavior: 'smooth' })
             }}
-            className={`group bg-white hover:bg-gradient-to-br hover:from-white hover:to-blue-50/50 rounded-3xl p-5 sm:p-6 border shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col justify-between ${
-              activeTab === 'monitoring' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200/80 hover:border-blue-300'
-            }`}
+            className={`group bg-white hover:bg-gradient-to-br hover:from-white hover:to-blue-50/50 rounded-3xl p-5 sm:p-6 border shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col justify-between ${activeTab === 'monitoring' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200/80 hover:border-blue-300'
+              }`}
           >
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -546,15 +560,14 @@ export default function PendampingDashboard() {
           </div>
 
           {/* Card Button 3: Tabel Siswa & Nilai */}
-          <div 
+          <div
             onClick={() => {
               setActiveTab('students')
               const el = document.getElementById('pendamping-content')
               if (el) el.scrollIntoView({ behavior: 'smooth' })
             }}
-            className={`group bg-white hover:bg-gradient-to-br hover:from-white hover:to-emerald-50/50 rounded-3xl p-5 sm:p-6 border shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col justify-between ${
-              activeTab === 'students' ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-slate-200/80 hover:border-emerald-300'
-            }`}
+            className={`group bg-white hover:bg-gradient-to-br hover:from-white hover:to-emerald-50/50 rounded-3xl p-5 sm:p-6 border shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col justify-between ${activeTab === 'students' ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-slate-200/80 hover:border-emerald-300'
+              }`}
           >
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -590,11 +603,10 @@ export default function PendampingDashboard() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab('students')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
-                activeTab === 'students'
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'students'
                   ? 'bg-primary-600 text-white shadow-md shadow-primary-600/20'
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-              }`}
+                }`}
             >
               <Users size={16} />
               <span>Daftar Nilai Siswa</span>
@@ -605,11 +617,10 @@ export default function PendampingDashboard() {
 
             <button
               onClick={() => setActiveTab('monitoring')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
-                activeTab === 'monitoring'
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'monitoring'
                   ? 'bg-primary-600 text-white shadow-md shadow-primary-600/20'
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-              }`}
+                }`}
             >
               <BarChart3 size={16} />
               <span>Monitoring Progres Ekskul</span>
@@ -654,7 +665,7 @@ export default function PendampingDashboard() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                   {searchTerm && (
-                    <button 
+                    <button
                       onClick={() => setSearchTerm('')}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     >
@@ -696,7 +707,7 @@ export default function PendampingDashboard() {
                       <thead>
                         <tr className="bg-slate-50/80 border-b border-slate-100 font-bold text-slate-600">
                           <th className="w-10 text-center py-2 px-1">No</th>
-                          <th 
+                          <th
                             className="cursor-pointer hover:text-primary-600 transition-colors py-2 px-2.5"
                             onClick={() => {
                               setSortConfig({
@@ -711,7 +722,7 @@ export default function PendampingDashboard() {
                             </div>
                           </th>
                           <th className="w-12 text-center py-2 px-1">JK</th>
-                          <th 
+                          <th
                             className="w-16 cursor-pointer hover:text-primary-600 transition-colors text-center py-2 px-1"
                             onClick={() => {
                               setSortConfig({
@@ -764,11 +775,10 @@ export default function PendampingDashboard() {
                               </td>
                               <td className="text-center py-2 px-1">
                                 {grade !== '-' ? (
-                                  <span className={`px-2 py-0.5 rounded font-black text-[10px] ${
-                                    grade === 'A' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                    grade === 'B' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                                    'bg-amber-50 text-amber-700 border border-amber-200'
-                                  }`}>
+                                  <span className={`px-2 py-0.5 rounded font-black text-[10px] ${grade === 'A' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                      grade === 'B' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                        'bg-amber-50 text-amber-700 border border-amber-200'
+                                    }`}>
                                     {grade}
                                   </span>
                                 ) : (
@@ -899,11 +909,10 @@ export default function PendampingDashboard() {
                         <td>
                           <div className="flex items-center gap-3">
                             <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full transition-all duration-700 ${
-                                  item.progress === 100 ? 'bg-emerald-500' :
-                                  item.progress > 0 ? 'bg-primary-500' : 'bg-slate-200'
-                                }`}
+                              <div
+                                className={`h-full transition-all duration-700 ${item.progress === 100 ? 'bg-emerald-500' :
+                                    item.progress > 0 ? 'bg-primary-500' : 'bg-slate-200'
+                                  }`}
                                 style={{ width: `${item.progress}%` }}
                               />
                             </div>

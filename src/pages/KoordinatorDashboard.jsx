@@ -211,7 +211,25 @@ export default function KoordinatorDashboard() {
           query = query.eq('student.academic_year', selectedYear)
         }
 
-        const { data, error } = await query
+        let { data, error } = await query
+
+        if (error) {
+          let fbQuery = supabase
+            .from('scores')
+            .select('extracurricular_id, average_score, att_1, student:students!inner(academic_year)')
+            .range(p * batchSize, (p + 1) * batchSize - 1)
+
+          if (selectedYear === '2025/2026') {
+            fbQuery = fbQuery.or('academic_year.eq.2025/2026,academic_year.is.null', { foreignTable: 'students' })
+          } else {
+            fbQuery = fbQuery.eq('student.academic_year', selectedYear)
+          }
+
+          const fbRes = await fbQuery
+          data = fbRes.data
+          error = fbRes.error
+        }
+
         if (error || !data || data.length < batchSize) hasMore = false
         if (data) allScores = [...allScores, ...data]
         p++
@@ -325,8 +343,8 @@ export default function KoordinatorDashboard() {
 
       let { data, count, error } = await query
 
-      // Fallback jika kolom sem2_pilihan belum dijalankan di database
-      if (error && error.message && error.message.includes('sem2_pilihan')) {
+      // Fallback jika skema database (kolom sem2 atau relasi) belum ada di remote database
+      if (error) {
         let fallbackQuery = supabase
           .from('students')
           .select(`

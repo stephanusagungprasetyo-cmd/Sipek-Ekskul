@@ -584,7 +584,8 @@ export default function MasterData() {
             existQuery = existQuery.eq('academic_year', rowYear)
           }
 
-          const { data: exist } = await existQuery.maybeSingle()
+          const { data: existRows } = await existQuery.limit(1)
+          const exist = existRows && existRows.length > 0 ? existRows[0] : null
 
           let studentId = null
 
@@ -592,24 +593,25 @@ export default function MasterData() {
             studentId = exist.id
             const updatePayload = {
               class_name: className || exist.class_name,
-              academic_year: rowYear
+              academic_year: rowYear,
+              wajib_id: wajibId || null,
+              pilihan_1_id: pil1Id || null,
+              pilihan_2_id: pil2Id || null,
+              pilihan_3_id: pil3Id || null
             }
-            if (wajibId) updatePayload.wajib_id = wajibId
-            if (pil1Id) updatePayload.pilihan_1_id = pil1Id
-            if (pil2Id) updatePayload.pilihan_2_id = pil2Id
-            if (pil3Id) updatePayload.pilihan_3_id = pil3Id
 
-            await supabase.from('students').update(updatePayload).eq('id', studentId)
+            const { error: updateErr } = await supabase.from('students').update(updatePayload).eq('id', studentId)
+            if (updateErr) console.warn('Warning saat update siswa:', updateErr)
           } else {
             const insertPayload = {
               name,
               gender,
               class_name: className || '-',
               academic_year: rowYear,
-              wajib_id: wajibId,
-              pilihan_1_id: pil1Id,
-              pilihan_2_id: pil2Id,
-              pilihan_3_id: pil3Id
+              wajib_id: wajibId || null,
+              pilihan_1_id: pil1Id || null,
+              pilihan_2_id: pil2Id || null,
+              pilihan_3_id: pil3Id || null
             }
 
             const { data: created, error: createErr } = await supabase
@@ -624,24 +626,32 @@ export default function MasterData() {
 
           // Sinkronisasi record scores: bersihkan ekskul lama yang sudah tidak aktif & upsert yang aktif
           const activeEkskulIds = [wajibId, pil1Id, pil2Id, pil3Id].filter(Boolean)
-          if (exist && activeEkskulIds.length > 0) {
-            await supabase.from('scores')
-              .delete()
-              .eq('student_id', studentId)
-              .not('extracurricular_id', 'in', `(${activeEkskulIds.join(',')})`)
+          if (exist) {
+            if (activeEkskulIds.length > 0) {
+              await supabase.from('scores')
+                .delete()
+                .eq('student_id', studentId)
+                .not('extracurricular_id', 'in', `(${activeEkskulIds.join(',')})`)
+            } else {
+              await supabase.from('scores')
+                .delete()
+                .eq('student_id', studentId)
+            }
           }
+
+          // Upsert scores dengan fallback skema & proteksi nilai lama agar tidak tertindih (ignoreDuplicates: true)
           for (const eid of activeEkskulIds) {
-            try {
-              await supabase.from('scores').upsert({
-                student_id: studentId,
-                extracurricular_id: eid,
-                semester: 1
-              }, { onConflict: 'student_id,extracurricular_id,semester' })
-            } catch (e) {
+            const { error: upsertSemErr } = await supabase.from('scores').upsert({
+              student_id: studentId,
+              extracurricular_id: eid,
+              semester: 1
+            }, { onConflict: 'student_id,extracurricular_id,semester', ignoreDuplicates: true })
+
+            if (upsertSemErr) {
               await supabase.from('scores').upsert({
                 student_id: studentId,
                 extracurricular_id: eid
-              }, { onConflict: 'student_id,extracurricular_id' })
+              }, { onConflict: 'student_id,extracurricular_id', ignoreDuplicates: true })
             }
           }
 
@@ -803,29 +813,27 @@ export default function MasterData() {
 
       // 2. Upsert record nilai untuk Semester 1
       for (const eid of selectedEkskulsSem1) {
-        try {
-          await supabase.from('scores').upsert({
-            student_id: studentId,
-            extracurricular_id: eid,
-            semester: 1
-          }, { onConflict: 'student_id,extracurricular_id,semester' })
-        } catch (e) {
+        const { error: upsertSemErr } = await supabase.from('scores').upsert({
+          student_id: studentId,
+          extracurricular_id: eid,
+          semester: 1
+        }, { onConflict: 'student_id,extracurricular_id,semester', ignoreDuplicates: true })
+
+        if (upsertSemErr) {
           await supabase.from('scores').upsert({
             student_id: studentId,
             extracurricular_id: eid
-          }, { onConflict: 'student_id,extracurricular_id' })
+          }, { onConflict: 'student_id,extracurricular_id', ignoreDuplicates: true })
         }
       }
 
-      // 3. Upsert record nilai untuk Semester 2
+      // 3. Upsert record nilai untuk Semester 2 (jika skema semester sudah aktif)
       for (const eid of selectedEkskulsSem2) {
-        try {
-          await supabase.from('scores').upsert({
-            student_id: studentId,
-            extracurricular_id: eid,
-            semester: 2
-          }, { onConflict: 'student_id,extracurricular_id,semester' })
-        } catch (e) {}
+        await supabase.from('scores').upsert({
+          student_id: studentId,
+          extracurricular_id: eid,
+          semester: 2
+        }, { onConflict: 'student_id,extracurricular_id,semester', ignoreDuplicates: true })
       }
 
       setShowEditModal(false)

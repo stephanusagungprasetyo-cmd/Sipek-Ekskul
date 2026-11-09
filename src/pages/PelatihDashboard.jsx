@@ -205,8 +205,8 @@ export default function PelatihDashboard() {
 
       let { data: scoresData, count, error } = await query
 
-      // Fallback jika kolom semester belum dijalankan di database
-      if (error && error.message && error.message.includes('semester')) {
+      // Fallback jika skema database (semester atau relasi sem2) belum dimigrasi di remote Supabase
+      if (error) {
         let fallbackQuery = supabase
           .from('scores')
           .select(`
@@ -237,6 +237,14 @@ export default function PelatihDashboard() {
 
         if (debouncedSearch.trim()) {
           fallbackQuery = fallbackQuery.or(`name.ilike.%${debouncedSearch.trim()}%,class_name.ilike.%${debouncedSearch.trim()}%`, { foreignTable: 'students' })
+        }
+
+        if (sortConfig.key === 'name') {
+          fallbackQuery = fallbackQuery.order('name', { foreignTable: 'students', ascending: sortConfig.direction === 'asc' })
+        } else {
+          fallbackQuery = fallbackQuery
+            .order('class_name', { foreignTable: 'students', ascending: sortConfig.direction === 'asc' })
+            .order('name', { foreignTable: 'students', ascending: true })
         }
 
         fallbackQuery = fallbackQuery.range(from, to)
