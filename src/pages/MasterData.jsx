@@ -431,7 +431,10 @@ export default function MasterData() {
       wajib_id: '',
       pilihan_1_id: '',
       pilihan_2_id: '',
-      pilihan_3_id: ''
+      pilihan_3_id: '',
+      sem2_pilihan_1_id: '',
+      sem2_pilihan_2_id: '',
+      sem2_pilihan_3_id: ''
     })
     setShowEditModal(true)
   }
@@ -444,6 +447,9 @@ export default function MasterData() {
       pilihan_1_id: student.pilihan_1_id || '',
       pilihan_2_id: student.pilihan_2_id || '',
       pilihan_3_id: student.pilihan_3_id || '',
+      sem2_pilihan_1_id: student.sem2_pilihan_1_id || '',
+      sem2_pilihan_2_id: student.sem2_pilihan_2_id || '',
+      sem2_pilihan_3_id: student.sem2_pilihan_3_id || '',
       academic_year: student.academic_year || selectedYear
     })
     setShowEditModal(true)
@@ -462,48 +468,111 @@ export default function MasterData() {
         wajib_id: editingStudent.wajib_id || null,
         pilihan_1_id: editingStudent.pilihan_1_id || null,
         pilihan_2_id: editingStudent.pilihan_2_id || null,
-        pilihan_3_id: editingStudent.pilihan_3_id || null
+        pilihan_3_id: editingStudent.pilihan_3_id || null,
+        sem2_pilihan_1_id: editingStudent.sem2_pilihan_1_id || null,
+        sem2_pilihan_2_id: editingStudent.sem2_pilihan_2_id || null,
+        sem2_pilihan_3_id: editingStudent.sem2_pilihan_3_id || null
       }
 
       let studentId = editingStudent.id
 
       if (isNewStudent) {
-        const { data: created, error } = await supabase.from('students').insert(payload).select('id').single()
+        let { data: created, error } = await supabase.from('students').insert(payload).select('id').single()
+        if (error && error.message && error.message.includes('sem2_pilihan')) {
+          // Fallback jika kolom sem2_pilihan belum dijalankan di Supabase
+          const fallbackPayload = { ...payload }
+          delete fallbackPayload.sem2_pilihan_1_id
+          delete fallbackPayload.sem2_pilihan_2_id
+          delete fallbackPayload.sem2_pilihan_3_id
+          const res = await supabase.from('students').insert(fallbackPayload).select('id').single()
+          created = res.data
+          error = res.error
+        }
         if (error) throw error
         studentId = created.id
         toast.success('Siswa baru berhasil ditambahkan!')
       } else {
-        const { error } = await supabase.from('students').update(payload).eq('id', studentId)
+        let { error } = await supabase.from('students').update(payload).eq('id', studentId)
+        if (error && error.message && error.message.includes('sem2_pilihan')) {
+          const fallbackPayload = { ...payload }
+          delete fallbackPayload.sem2_pilihan_1_id
+          delete fallbackPayload.sem2_pilihan_2_id
+          delete fallbackPayload.sem2_pilihan_3_id
+          const res = await supabase.from('students').update(fallbackPayload).eq('id', studentId)
+          error = res.error
+        }
         if (error) throw error
         toast.success('Data siswa berhasil diperbarui!')
       }
 
-      // Sinkronisasi record scores untuk ekskul terpilih
-      const selectedEkskuls = [
+      // Sinkronisasi record scores untuk Semester 1
+      const selectedEkskulsSem1 = [
         payload.wajib_id,
         payload.pilihan_1_id,
         payload.pilihan_2_id,
         payload.pilihan_3_id
       ].filter(Boolean)
 
-      // Bersihkan baris nilai ekskul lama yang sudah tidak lagi dipilih oleh siswa ini
+      // Sinkronisasi record scores untuk Semester 2 (Mendukung Opsi B: Boleh Ganti Ekskul di Sem 2)
+      const selectedEkskulsSem2 = [
+        payload.wajib_id,
+        payload.sem2_pilihan_1_id || payload.pilihan_1_id,
+        payload.sem2_pilihan_2_id || payload.pilihan_2_id,
+        payload.sem2_pilihan_3_id || payload.pilihan_3_id
+      ].filter(Boolean)
+
+      // 1. Bersihkan nilai ekskul lama yang sudah tidak lagi dipilih siswa
       if (!isNewStudent) {
-        if (selectedEkskuls.length > 0) {
-          await supabase.from('scores')
-            .delete()
-            .eq('student_id', studentId)
-            .not('extracurricular_id', 'in', `(${selectedEkskuls.join(',')})`)
-        } else {
-          await supabase.from('scores').delete().eq('student_id', studentId)
+        if (selectedEkskulsSem1.length > 0) {
+          try {
+            await supabase.from('scores')
+              .delete()
+              .eq('student_id', studentId)
+              .eq('semester', 1)
+              .not('extracurricular_id', 'in', `(${selectedEkskulsSem1.join(',')})`)
+          } catch (e) {
+            await supabase.from('scores')
+              .delete()
+              .eq('student_id', studentId)
+              .not('extracurricular_id', 'in', `(${selectedEkskulsSem1.join(',')})`)
+          }
+        }
+        if (selectedEkskulsSem2.length > 0) {
+          try {
+            await supabase.from('scores')
+              .delete()
+              .eq('student_id', studentId)
+              .eq('semester', 2)
+              .not('extracurricular_id', 'in', `(${selectedEkskulsSem2.join(',')})`)
+          } catch (e) {}
         }
       }
 
-      // Upsert record nilai untuk ekskul yang saat ini dipilih
-      for (const eid of selectedEkskuls) {
-        await supabase.from('scores').upsert({
-          student_id: studentId,
-          extracurricular_id: eid
-        }, { onConflict: 'student_id,extracurricular_id' })
+      // 2. Upsert record nilai untuk Semester 1
+      for (const eid of selectedEkskulsSem1) {
+        try {
+          await supabase.from('scores').upsert({
+            student_id: studentId,
+            extracurricular_id: eid,
+            semester: 1
+          }, { onConflict: 'student_id,extracurricular_id,semester' })
+        } catch (e) {
+          await supabase.from('scores').upsert({
+            student_id: studentId,
+            extracurricular_id: eid
+          }, { onConflict: 'student_id,extracurricular_id' })
+        }
+      }
+
+      // 3. Upsert record nilai untuk Semester 2
+      for (const eid of selectedEkskulsSem2) {
+        try {
+          await supabase.from('scores').upsert({
+            student_id: studentId,
+            extracurricular_id: eid,
+            semester: 2
+          }, { onConflict: 'student_id,extracurricular_id,semester' })
+        } catch (e) {}
       }
 
       setShowEditModal(false)
@@ -596,8 +665,8 @@ export default function MasterData() {
             onChange={(e) => handleYearChange(e.target.value)}
             className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[140px]"
           >
-            <option value="2026/2027">2026/2027 (Baru)</option>
-            <option value="2025/2026">2025/2026 (Lama)</option>
+            <option value="2026/2027">2026/2027</option>
+            <option value="2025/2026">2025/2026</option>
             <option value="2027/2028">2027/2028</option>
           </select>
         </div>
@@ -803,8 +872,8 @@ export default function MasterData() {
                   onChange={(e) => setImportTargetYear(e.target.value)}
                   className="input-field py-1.5 text-xs font-bold text-slate-800"
                 >
-                  <option value="2026/2027">2026/2027 (Baru)</option>
-                  <option value="2025/2026">2025/2026 (Lama)</option>
+                  <option value="2026/2027">2026/2027</option>
+                  <option value="2025/2026">2025/2026</option>
                   <option value="2027/2028">2027/2028</option>
                 </select>
                 <p className="text-[10px] text-slate-400 leading-tight">
@@ -958,6 +1027,49 @@ export default function MasterData() {
                     ekskuls={ekskuls} 
                     onChange={(val) => setEditingStudent({...editingStudent, pilihan_3_id: val})} 
                   />
+                </div>
+
+                {/* Opsi B: Pilihan Ekskul Semester 2 (Jika Siswa Pindah Ekskul) */}
+                <div className="md:col-span-2 pt-2 border-t border-slate-100">
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-800">
+                        Pilihan Ekskul Semester 2 (Opsional - Jika Siswa Ganti Ekskul)
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-semibold bg-white px-2 py-0.5 rounded border border-slate-200">
+                        Opsi B
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-2.5">
+                      Kosongkan jika siswa tetap mengikuti ekskul pilihan yang sama seperti Semester 1.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Pilihan 1 (Sem. 2)</label>
+                        <EkskulSelect 
+                          value={editingStudent.sem2_pilihan_1_id} 
+                          ekskuls={ekskuls} 
+                          onChange={(val) => setEditingStudent({...editingStudent, sem2_pilihan_1_id: val})} 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Pilihan 2 (Sem. 2)</label>
+                        <EkskulSelect 
+                          value={editingStudent.sem2_pilihan_2_id} 
+                          ekskuls={ekskuls} 
+                          onChange={(val) => setEditingStudent({...editingStudent, sem2_pilihan_2_id: val})} 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Pilihan 3 (Sem. 2)</label>
+                        <EkskulSelect 
+                          value={editingStudent.sem2_pilihan_3_id} 
+                          ekskuls={ekskuls} 
+                          onChange={(val) => setEditingStudent({...editingStudent, sem2_pilihan_3_id: val})} 
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

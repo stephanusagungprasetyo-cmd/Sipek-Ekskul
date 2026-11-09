@@ -1,21 +1,24 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import {
-  Search,
-  Loader2,
-  Calendar,
-  ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  X,
+import { 
+  Search, 
+  Loader2, 
+  Calendar, 
+  ArrowUpDown, 
+  ChevronLeft, 
+  ChevronRight, 
+  ChevronsLeft, 
+  ChevronsRight, 
+  X, 
   Filter,
   CheckCircle2,
   Clock,
   Layers,
-  Info
+  Info,
+  Lock,
+  Unlock,
+  AlertTriangle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -55,8 +58,10 @@ const getGrade = (score) => {
 export default function PelatihDashboard() {
   const { profile } = useAuthStore()
 
-  // Filter Tahun Ajaran (Revisi Poin 1 & 2 - Default 2026/2027)
+  // Filter Utama: Tahun Ajaran & Semester
   const [selectedYear, setSelectedYear] = useState('2026/2027')
+  const [selectedSemester, setSelectedSemester] = useState('1') // '1' atau '2'
+  const [isSemester1Locked, setIsSemester1Locked] = useState(false)
 
   // Ekstrakurikuler & View Mode
   const [selectedEkskul, setSelectedEkskul] = useState(profile?.extracurricular_id || '')
@@ -87,6 +92,26 @@ export default function PelatihDashboard() {
     return () => clearTimeout(timer)
   }, [searchTerm])
 
+  // Fetch lock status dari system_settings
+  const fetchLockStatus = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'semester_lock')
+        .maybeSingle()
+      if (!error && data?.value) {
+        setIsSemester1Locked(Boolean(data.value.semester_1_locked))
+      }
+    } catch (e) {
+      // Graceful fallback jika tabel belum ada
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchLockStatus()
+  }, [fetchLockStatus])
+
   // Fetch list of extracurriculars on mount
   useEffect(() => {
     async function fetchEkskuls() {
@@ -94,7 +119,6 @@ export default function PelatihDashboard() {
       if (!error && data) {
         setEkskuls(data)
         if (!selectedEkskul && data.length > 0) {
-          // If no assigned ekskul in profile, pick first one as default
           setSelectedEkskul(data[0].id)
         }
       }
@@ -102,7 +126,7 @@ export default function PelatihDashboard() {
     fetchEkskuls()
   }, [])
 
-  // Fetch paginated scores data based on selectedEkskul, selectedYear, and pagination
+  // Fetch paginated scores data based on selectedEkskul, selectedYear, selectedSemester, and pagination
   const fetchData = useCallback(async () => {
     if (!selectedEkskul) {
       setData([])
@@ -116,12 +140,15 @@ export default function PelatihDashboard() {
       const from = (page - 1) * pageSize
       const to = from + pageSize - 1
 
+      // Coba query dengan filter semester
       let query = supabase
         .from('scores')
         .select(`
           id,
           student_id,
           extracurricular_id,
+          semester,
+          is_locked,
           att_1, att_2, att_3, att_4, att_5, att_6,
           att_7, att_8, att_9, att_10, att_11, att_12,
           prac_1, prac_2, prac_3, prac_4, prac_5,
@@ -133,15 +160,27 @@ export default function PelatihDashboard() {
             name,
             gender,
             class_name,
-            academic_year
+            academic_year,
+            wajib_id,
+            pilihan_1_id,
+            pilihan_2_id,
+            pilihan_3_id,
+            sem2_pilihan_1_id,
+            sem2_pilihan_2_id,
+            sem2_pilihan_3_id
           )
         `, { count: 'exact' })
         .eq('extracurricular_id', selectedEkskul)
+        .eq('semester', Number(selectedSemester))
 
-      // Proteksi Ganda: Siswa harus benar-benar terdaftar di ekskul ini pada tabel students (Mencegah data yatim/orphaned scores)
-      query = query.or(`wajib_id.eq.${selectedEkskul},pilihan_1_id.eq.${selectedEkskul},pilihan_2_id.eq.${selectedEkskul},pilihan_3_id.eq.${selectedEkskul}`, { foreignTable: 'students' })
+      // Proteksi Ganda: Siswa harus terdaftar di ekskul ini (dukungan ganti ekskul semester 2)
+      if (selectedSemester === '2') {
+        query = query.or(`wajib_id.eq.${selectedEkskul},sem2_pilihan_1_id.eq.${selectedEkskul},sem2_pilihan_2_id.eq.${selectedEkskul},sem2_pilihan_3_id.eq.${selectedEkskul},pilihan_1_id.eq.${selectedEkskul},pilihan_2_id.eq.${selectedEkskul},pilihan_3_id.eq.${selectedEkskul}`, { foreignTable: 'students' })
+      } else {
+        query = query.or(`wajib_id.eq.${selectedEkskul},pilihan_1_id.eq.${selectedEkskul},pilihan_2_id.eq.${selectedEkskul},pilihan_3_id.eq.${selectedEkskul}`, { foreignTable: 'students' })
+      }
 
-      // Filter Tahun Ajaran pada tabel students (Revisi Poin 2)
+      // Filter Tahun Ajaran pada tabel students
       if (selectedYear === '2025/2026') {
         query = query.or('academic_year.eq.2025/2026,academic_year.is.null', { foreignTable: 'students' })
       } else {
@@ -165,7 +204,48 @@ export default function PelatihDashboard() {
       // Server-side Range
       query = query.range(from, to)
 
-      const { data: scoresData, count, error } = await query
+      let { data: scoresData, count, error } = await query
+
+      // Fallback jika kolom semester belum dijalankan di database
+      if (error && error.message && error.message.includes('semester')) {
+        let fallbackQuery = supabase
+          .from('scores')
+          .select(`
+            id,
+            student_id,
+            extracurricular_id,
+            att_1, att_2, att_3, att_4, att_5, att_6,
+            att_7, att_8, att_9, att_10, att_11, att_12,
+            prac_1, prac_2, prac_3, prac_4, prac_5,
+            know_1, know_2, know_3,
+            average_score,
+            updated_at,
+            students!inner (
+              id,
+              name,
+              gender,
+              class_name,
+              academic_year
+            )
+          `, { count: 'exact' })
+          .eq('extracurricular_id', selectedEkskul)
+
+        if (selectedYear === '2025/2026') {
+          fallbackQuery = fallbackQuery.or('academic_year.eq.2025/2026,academic_year.is.null', { foreignTable: 'students' })
+        } else {
+          fallbackQuery = fallbackQuery.eq('students.academic_year', selectedYear)
+        }
+
+        if (debouncedSearch.trim()) {
+          fallbackQuery = fallbackQuery.or(`name.ilike.%${debouncedSearch.trim()}%,class_name.ilike.%${debouncedSearch.trim()}%`, { foreignTable: 'students' })
+        }
+
+        fallbackQuery = fallbackQuery.range(from, to)
+        const res = await fallbackQuery
+        scoresData = res.data
+        count = res.count
+        error = res.error
+      }
 
       if (error) throw error
 
@@ -177,16 +257,16 @@ export default function PelatihDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [selectedEkskul, selectedYear, page, pageSize, debouncedSearch, sortConfig])
+  }, [selectedEkskul, selectedYear, selectedSemester, page, pageSize, debouncedSearch, sortConfig])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
-  // Supabase Realtime Listener untuk perubahan data siswa dari Admin
+  // Supabase Realtime Listener untuk perubahan data siswa dari Admin & system_settings
   useEffect(() => {
     const channel = supabase
-      .channel('students-pelatih-realtime')
+      .channel('pelatih-dashboard-realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'students' },
@@ -194,15 +274,30 @@ export default function PelatihDashboard() {
           fetchData()
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'system_settings' },
+        () => {
+          fetchLockStatus()
+        }
+      )
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchData])
+  }, [fetchData, fetchLockStatus])
+
+  // Status apakah penilaian saat ini terkunci
+  const isLocked = selectedSemester === '1' && isSemester1Locked
 
   // Handle local state updates with input clamping (0 - 100)
   const handleLocalChange = (id, field, value) => {
+    if (isLocked) {
+      toast.error('Nilai Semester 1 telah dikunci dan tidak dapat diubah.')
+      return
+    }
+
     let displayValue = value
     if (field.startsWith('prac_') || field.startsWith('know_')) {
       if (value !== '' && value !== null && value !== undefined) {
@@ -223,6 +318,8 @@ export default function PelatihDashboard() {
 
   // Handle saving score/attendance to database with automatic average recalculation & clamping
   const handleSaveToDb = async (id, field, value) => {
+    if (isLocked) return
+
     const currentItem = data.find(item => item.id === id)
     if (!currentItem) return
 
@@ -258,6 +355,10 @@ export default function PelatihDashboard() {
 
   // Cycle Attendance: '' -> 'O' (Hadir) -> 'I' (Izin) -> 'A' (Alpa) -> 'S' (Sakit) -> ''
   const cycleAttendance = (id, field, current) => {
+    if (isLocked) {
+      toast.error('Nilai Semester 1 telah dikunci dan tidak dapat diubah.')
+      return
+    }
     const nextIdx = (ATTENDANCE_VALUES.indexOf(current || '') + 1) % ATTENDANCE_VALUES.length
     const nextVal = ATTENDANCE_VALUES[nextIdx]
     handleLocalChange(id, field, nextVal)
@@ -266,6 +367,11 @@ export default function PelatihDashboard() {
 
   const handleYearChange = (year) => {
     setSelectedYear(year)
+    setPage(1)
+  }
+
+  const handleSemesterChange = (semester) => {
+    setSelectedSemester(semester)
     setPage(1)
   }
 
@@ -282,7 +388,6 @@ export default function PelatihDashboard() {
   }
 
   const totalPages = Math.ceil(totalCount / pageSize) || 1
-  const currentEkskulObj = ekskuls.find(e => e.id === selectedEkskul)
 
   return (
     <div className="space-y-4">
@@ -293,13 +398,13 @@ export default function PelatihDashboard() {
             {profile?.role === 'pendamping' ? 'Input Nilai (Pendamping)' : 'Panel Pelatih'}
           </h2>
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-            Kelola presensi dan penilaian siswa ekstrakurikuler. Master data siswa dikelola terpusat oleh Admin.
+            Kelola presensi dan penilaian siswa per semester. Master data siswa dikelola terpusat oleh Admin.
           </p>
         </div>
 
-        {/* Filter Dropdowns: Tahun Ajaran & Ekstrakurikuler */}
+        {/* Filter Dropdowns: Tahun Ajaran, Semester, & Ekstrakurikuler */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Dropdown Tahun Ajaran (Revisi Poin 1) */}
+          {/* Dropdown Tahun Ajaran */}
           <div className="flex items-center gap-1.5 bg-white border border-slate-200/90 rounded-xl px-3 py-1.5 shadow-sm">
             <Calendar size={14} className="text-primary-600 shrink-0" />
             <span className="text-xs font-bold text-slate-600">T.A:</span>
@@ -308,10 +413,35 @@ export default function PelatihDashboard() {
               onChange={(e) => handleYearChange(e.target.value)}
               className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
             >
-              <option value="2026/2027">2026/2027 (Baru)</option>
-              <option value="2025/2026">2025/2026 (Lama)</option>
+              <option value="2026/2027">2026/2027</option>
+              <option value="2025/2026">2025/2026</option>
               <option value="2027/2028">2027/2028</option>
             </select>
+          </div>
+
+          {/* Toggle Semester */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+            <button
+              onClick={() => handleSemesterChange('1')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                selectedSemester === '1'
+                  ? 'bg-primary-600 text-white shadow-sm font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>Sem. 1</span>
+              {isSemester1Locked && <Lock size={12} className={selectedSemester === '1' ? 'text-white' : 'text-amber-600'} />}
+            </button>
+            <button
+              onClick={() => handleSemesterChange('2')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                selectedSemester === '2'
+                  ? 'bg-primary-600 text-white shadow-sm font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Sem. 2
+            </button>
           </div>
 
           {/* Dropdown Ekstrakurikuler */}
@@ -320,7 +450,7 @@ export default function PelatihDashboard() {
             <select
               value={selectedEkskul}
               onChange={(e) => handleEkskulChange(e.target.value)}
-              className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer max-w-[180px] sm:max-w-[220px] truncate"
+              className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer max-w-[170px] sm:max-w-[210px] truncate"
             >
               <option value="">-- Pilih Ekstrakurikuler --</option>
               {ekskuls.map(e => (
@@ -333,34 +463,57 @@ export default function PelatihDashboard() {
           <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/60">
             <button
               onClick={() => setViewMode('attendance')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'attendance'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'attendance'
                   ? 'bg-primary-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
-                }`}
+              }`}
             >
               Presensi (12)
             </button>
             <button
               onClick={() => setViewMode('practice')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'practice'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'practice'
                   ? 'bg-primary-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
-                }`}
+              }`}
             >
               Praktik (5)
             </button>
             <button
               onClick={() => setViewMode('knowledge')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'knowledge'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'knowledge'
                   ? 'bg-primary-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
-                }`}
+              }`}
             >
               Pengetahuan (3)
             </button>
           </div>
         </div>
       </div>
+
+      {/* Lock Notice Banner if Semester 1 is Locked */}
+      {isLocked && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-amber-900 text-xs font-semibold flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+              <Lock size={16} />
+            </div>
+            <div>
+              <p className="font-bold text-amber-950">Nilai Semester 1 (Ganjil) Telah Dikunci</p>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                Nilai dan presensi Semester 1 telah dikunci oleh Koordinator/Admin untuk keperluan pencetakan rapor. Mode Hanya Lihat (Read-Only).
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 bg-amber-200/80 text-amber-950 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0">
+            Terkunci
+          </span>
+        </div>
+      )}
 
       {/* Control Bar: Search & Page Size (Server-side Pagination Options: 10, 20, 50) */}
       <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -374,7 +527,7 @@ export default function PelatihDashboard() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
           {searchTerm && (
-            <button
+            <button 
               onClick={() => setSearchTerm('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
             >
@@ -402,17 +555,17 @@ export default function PelatihDashboard() {
           </div>
 
           <div className="hidden sm:block text-[11px] font-semibold text-slate-400">
-            Total: <strong className="text-slate-700">{totalCount}</strong> siswa
+            Total: <strong className="text-slate-700">{totalCount}</strong> siswa (Sem. {selectedSemester})
           </div>
         </div>
       </div>
 
-      {/* Compact Table (Ringkas tanpa horizontal scroll berlebih) */}
+      {/* Compact Table */}
       <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
         {loading ? (
           <div className="p-16 text-center text-slate-400 flex flex-col items-center gap-3">
             <Loader2 className="animate-spin text-primary-600" size={32} />
-            <p className="text-xs font-medium">Memuat data nilai...</p>
+            <p className="text-xs font-medium">Memuat data nilai (Sem. {selectedSemester})...</p>
           </div>
         ) : !selectedEkskul ? (
           <div className="p-16 text-center text-slate-400 flex flex-col items-center gap-2">
@@ -427,13 +580,13 @@ export default function PelatihDashboard() {
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-100 font-bold text-slate-600">
                     <th className="w-10 text-center py-2 px-1">No</th>
-                    <th
+                    <th 
                       className="cursor-pointer hover:text-primary-600 transition-colors py-2 px-2.5 min-w-[150px]"
                       onClick={() => requestSort('name')}
                     >
                       <div className="flex items-center gap-1">Nama Siswa <ArrowUpDown size={11} /></div>
                     </th>
-                    <th
+                    <th 
                       className="w-16 text-center cursor-pointer hover:text-primary-600 transition-colors py-2 px-1"
                       onClick={() => requestSort('class_name')}
                     >
@@ -469,7 +622,6 @@ export default function PelatihDashboard() {
                   {data.map((item, idx) => {
                     const avg = calculateAverage(item)
                     const grade = getGrade(avg)
-                    const isRowSaving = savingId === item.id
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
@@ -483,7 +635,7 @@ export default function PelatihDashboard() {
                           {item.students?.class_name || '-'}
                         </td>
 
-                        {/* View 1: Presensi 1 - 12 (Ringkas) */}
+                        {/* View 1: Presensi 1 - 12 */}
                         {viewMode === 'attendance' && [...Array(12)].map((_, i) => {
                           const field = `att_${i + 1}`
                           const val = item[field]
@@ -491,11 +643,17 @@ export default function PelatihDashboard() {
                             <td key={i} className="p-0.5 text-center">
                               <button
                                 onClick={() => cycleAttendance(item.id, field, val)}
-                                title={`P-${i + 1}: ${val || 'Kosong'} (Klik ganti)`}
-                                className={`w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-black mx-auto transition-all ${!val ? 'bg-slate-100 text-slate-300 hover:bg-slate-200' : ''
-                                  } ${val === 'O' ? 'bg-emerald-500 text-white shadow-sm' : ''} ${val === 'I' ? 'bg-blue-500 text-white shadow-sm' : ''
-                                  } ${val === 'S' ? 'bg-amber-500 text-white shadow-sm' : ''} ${val === 'A' ? 'bg-rose-500 text-white shadow-sm' : ''
-                                  }`}
+                                disabled={isLocked}
+                                title={isLocked ? 'Nilai terkunci' : `P-${i+1}: ${val || 'Kosong'} (Klik ganti)`}
+                                className={`w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-black mx-auto transition-all ${
+                                  isLocked ? 'cursor-not-allowed opacity-80' : ''
+                                } ${
+                                  !val ? 'bg-slate-100 text-slate-300 hover:bg-slate-200' : ''
+                                } ${val === 'O' ? 'bg-emerald-500 text-white shadow-sm' : ''} ${
+                                  val === 'I' ? 'bg-blue-500 text-white shadow-sm' : ''
+                                } ${val === 'S' ? 'bg-amber-500 text-white shadow-sm' : ''} ${
+                                  val === 'A' ? 'bg-rose-500 text-white shadow-sm' : ''
+                                }`}
                               >
                                 {val || '-'}
                               </button>
@@ -503,7 +661,7 @@ export default function PelatihDashboard() {
                           )
                         })}
 
-                        {/* View 2: Nilai Praktik 1 - 5 (Ringkas) */}
+                        {/* View 2: Nilai Praktik 1 - 5 */}
                         {viewMode === 'practice' && [...Array(5)].map((_, i) => (
                           <td key={i} className="p-1 text-center">
                             <input
@@ -511,15 +669,21 @@ export default function PelatihDashboard() {
                               min="0"
                               max="100"
                               placeholder="-"
-                              className="w-14 h-7 text-center text-xs font-bold bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none transition-all"
-                              value={item[`prac_${i + 1}`] ?? ''}
-                              onChange={(e) => handleLocalChange(item.id, `prac_${i + 1}`, e.target.value)}
-                              onBlur={(e) => handleSaveToDb(item.id, `prac_${i + 1}`, e.target.value)}
+                              disabled={isLocked}
+                              readOnly={isLocked}
+                              className={`w-14 h-7 text-center text-xs font-bold rounded-md outline-none transition-all ${
+                                isLocked 
+                                  ? 'bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed' 
+                                  : 'bg-slate-50 border border-slate-200 focus:bg-white focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
+                              }`}
+                              value={item[`prac_${i+1}`] ?? ''}
+                              onChange={(e) => handleLocalChange(item.id, `prac_${i+1}`, e.target.value)}
+                              onBlur={(e) => handleSaveToDb(item.id, `prac_${i+1}`, e.target.value)}
                             />
                           </td>
                         ))}
 
-                        {/* View 3: Nilai Pengetahuan 1 - 3 (Ringkas) */}
+                        {/* View 3: Nilai Pengetahuan 1 - 3 */}
                         {viewMode === 'knowledge' && [...Array(3)].map((_, i) => (
                           <td key={i} className="p-1 text-center">
                             <input
@@ -527,10 +691,16 @@ export default function PelatihDashboard() {
                               min="0"
                               max="100"
                               placeholder="-"
-                              className="w-14 h-7 text-center text-xs font-bold bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none transition-all"
-                              value={item[`know_${i + 1}`] ?? ''}
-                              onChange={(e) => handleLocalChange(item.id, `know_${i + 1}`, e.target.value)}
-                              onBlur={(e) => handleSaveToDb(item.id, `know_${i + 1}`, e.target.value)}
+                              disabled={isLocked}
+                              readOnly={isLocked}
+                              className={`w-14 h-7 text-center text-xs font-bold rounded-md outline-none transition-all ${
+                                isLocked 
+                                  ? 'bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed' 
+                                  : 'bg-slate-50 border border-slate-200 focus:bg-white focus:border-primary-500 focus:ring-1 focus:ring-primary-500'
+                              }`}
+                              value={item[`know_${i+1}`] ?? ''}
+                              onChange={(e) => handleLocalChange(item.id, `know_${i+1}`, e.target.value)}
+                              onBlur={(e) => handleSaveToDb(item.id, `know_${i+1}`, e.target.value)}
                             />
                           </td>
                         ))}
@@ -543,10 +713,11 @@ export default function PelatihDashboard() {
                         {/* Grade */}
                         <td className="text-center py-1.5 px-1">
                           {grade !== '-' ? (
-                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md font-black text-[11px] ${grade === 'A' ? 'bg-emerald-100 text-emerald-700' :
-                                grade === 'B' ? 'bg-blue-100 text-blue-700' :
-                                  'bg-rose-100 text-rose-700'
-                              }`}>
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md font-black text-[11px] ${
+                              grade === 'A' ? 'bg-emerald-100 text-emerald-700' :
+                              grade === 'B' ? 'bg-blue-100 text-blue-700' :
+                              'bg-rose-100 text-rose-700'
+                            }`}>
                               {grade}
                             </span>
                           ) : (
@@ -563,7 +734,7 @@ export default function PelatihDashboard() {
             {/* Server-side Pagination Controls */}
             <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
               <div>
-                Menampilkan <strong className="text-slate-800">{(page - 1) * pageSize + 1}</strong> - <strong className="text-slate-800">{Math.min(page * pageSize, totalCount)}</strong> dari <strong className="text-slate-800">{totalCount}</strong> siswa (T.A. {selectedYear})
+                Menampilkan <strong className="text-slate-800">{(page - 1) * pageSize + 1}</strong> - <strong className="text-slate-800">{Math.min(page * pageSize, totalCount)}</strong> dari <strong className="text-slate-800">{totalCount}</strong> siswa (T.A. {selectedYear} • Sem. {selectedSemester})
               </div>
 
               <div className="flex items-center gap-1">
@@ -610,7 +781,7 @@ export default function PelatihDashboard() {
         ) : (
           <div className="p-16 text-center text-slate-400">
             <Info size={36} className="mx-auto mb-2 text-slate-300" />
-            <p className="text-sm font-bold text-slate-600">Belum ada siswa terdaftar di ekstrakurikuler ini</p>
+            <p className="text-sm font-bold text-slate-600">Belum ada siswa terdaftar di ekstrakurikuler ini pada Semester {selectedSemester}</p>
             <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
               Daftar siswa dikelola terpusat oleh Admin pada menu Management Data Siswa. Siswa akan muncul otomatis setelah dialokasikan oleh Admin.
             </p>
@@ -618,7 +789,7 @@ export default function PelatihDashboard() {
         )}
       </div>
 
-      {/* Legend & Petunjuk Pengisian (Ringkas) */}
+      {/* Legend & Petunjuk Pengisian */}
       <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-bold text-slate-700">Keterangan Presensi:</span>
@@ -628,7 +799,7 @@ export default function PelatihDashboard() {
           <span className="inline-flex items-center gap-1 font-semibold"><span className="w-5 h-5 rounded bg-rose-500 text-white font-black flex items-center justify-center text-[10px]">A</span> Alpa</span>
         </div>
         <div className="text-[11px] text-slate-500 italic">
-          *Klik kotak presensi atau ketik nilai praktik/pengetahuan. Nilai dan rerata tersimpan otomatis.
+          *Hanya kode Hadir (O) yang dihitung 100% kehadiran fisik. Nilai dan rerata tersimpan otomatis.
         </div>
       </div>
     </div>

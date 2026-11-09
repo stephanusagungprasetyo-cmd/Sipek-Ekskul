@@ -21,7 +21,9 @@ import {
   ArrowRight,
   X,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Lock,
+  Unlock
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -72,12 +74,12 @@ const getGradeStr = (score) => {
 }
 
 export default function KoordinatorDashboard() {
-  // Filter Utama: Tahun Ajaran Dropdown & Semester (Revisi Poin 1)
+  // Filter Utama: Tahun Ajaran Dropdown & Semester
   const [selectedYear, setSelectedYear] = useState('2026/2027')
   const [selectedSemester, setSelectedSemester] = useState('1')
+  const [isSemester1Locked, setIsSemester1Locked] = useState(false)
 
   // Active View Tab: 'monitoring' (Monitoring Nilai) atau 'rekap' (Rekap Nilai Siswa)
-  // Sesuai Revisi Poin 4: Menu Monitoring dibuat di Dashboard saja melalui Card Buttons
   const [activeView, setActiveView] = useState('monitoring')
 
   // Monitoring States
@@ -94,7 +96,7 @@ export default function KoordinatorDashboard() {
     loading: true
   })
 
-  // Rekap Nilai States (Server-side Pagination: 10, 20, 50 - Revisi Tambahan)
+  // Rekap Nilai States (Server-side Pagination: 10, 20, 50)
   const [studentsData, setStudentsData] = useState([])
   const [totalStudentsCount, setTotalStudentsCount] = useState(0)
   const [page, setPage] = useState(1)
@@ -115,6 +117,47 @@ export default function KoordinatorDashboard() {
     }, 400)
     return () => clearTimeout(timer)
   }, [searchTerm])
+
+  // Fetch lock status dari system_settings
+  const fetchLockStatus = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'semester_lock')
+        .maybeSingle()
+      if (!error && data?.value) {
+        setIsSemester1Locked(Boolean(data.value.semester_1_locked))
+      }
+    } catch (e) {}
+  }, [])
+
+  useEffect(() => {
+    fetchLockStatus()
+  }, [fetchLockStatus])
+
+  // Toggle Kunci Nilai Semester 1
+  const handleToggleLockSemester1 = async () => {
+    const newStatus = !isSemester1Locked
+    const confirmMsg = newStatus 
+      ? 'Kunci nilai Semester 1? Seluruh nilai dan presensi Semester 1 akan dikunci sehingga pelatih tidak dapat mengubahnya lagi.' 
+      : 'Buka kunci nilai Semester 1? Pelatih akan dapat mengubah kembali nilai Semester 1.'
+    if (!window.confirm(confirmMsg)) return
+
+    try {
+      const { error } = await supabase.from('system_settings').upsert({
+        key: 'semester_lock',
+        value: { semester_1_locked: newStatus },
+        updated_at: new Date().toISOString()
+      })
+      if (error) throw error
+
+      setIsSemester1Locked(newStatus)
+      toast.success(newStatus ? 'Nilai Semester 1 berhasil dikunci' : 'Kunci nilai Semester 1 berhasil dibuka')
+    } catch (err) {
+      toast.error('Gagal memperbarui status kunci: ' + err.message)
+    }
+  }
 
   // Fetch unique classes for selected academic year
   useEffect(() => {
@@ -138,12 +181,11 @@ export default function KoordinatorDashboard() {
     fetchClasses()
   }, [selectedYear])
 
-  // Fetch Monitoring Progres per Ekskul & Summary Stats
+  // Fetch Monitoring Progres per Ekskul & Summary Stats (Sesuai Semester Aktif)
   const fetchMonitoringData = useCallback(async () => {
     setLoadingMonitoring(true)
     setSummaryStats(prev => ({ ...prev, loading: true }))
     try {
-      // 1. Ambil seluruh data ekstrakurikuler
       const { data: ekskuls, error: ekskulErr } = await supabase
         .from('extracurriculars')
         .select('*')
@@ -152,7 +194,6 @@ export default function KoordinatorDashboard() {
       if (ekskulErr) throw ekskulErr
       if (!ekskuls) return
 
-      // 2. Fetch scores untuk Tahun Ajaran aktif
       let allScores = []
       let p = 0
       const batchSize = 1000
@@ -161,7 +202,7 @@ export default function KoordinatorDashboard() {
       while (hasMore) {
         let query = supabase
           .from('scores')
-          .select('extracurricular_id, average_score, att_1, student:students!inner(academic_year)')
+          .select('extracurricular_id, semester, average_score, att_1, student:students!inner(academic_year)')
           .range(p * batchSize, (p + 1) * batchSize - 1)
 
         if (selectedYear === '2025/2026') {
@@ -176,12 +217,16 @@ export default function KoordinatorDashboard() {
         p++
       }
 
-      // 3. Hitung progress per ekskul
+      // Filter scores sesuai semester yang dipilih (jika ada kolom semester)
+      const semesterFilteredScores = allScores.filter(s => 
+        s.semester === undefined || s.semester === null || s.semester === Number(selectedSemester)
+      )
+
       let completedCount = 0
       let totalFilledAll = 0
 
       const statsPerEkskul = ekskuls.map(e => {
-        const scoresThisEkskul = allScores.filter(s => s.extracurricular_id === e.id)
+        const scoresThisEkskul = semesterFilteredScores.filter(s => s.extracurricular_id === e.id)
         const total = scoresThisEkskul.length
         const filled = scoresThisEkskul.filter(s => s.att_1 || s.average_score > 0).length
         totalFilledAll += filled
@@ -197,7 +242,6 @@ export default function KoordinatorDashboard() {
         }
       })
 
-      // Hitung total siswa unik untuk Tahun Ajaran terpilih
       let countQuery = supabase.from('students').select('*', { count: 'exact', head: true })
       if (selectedYear === '2025/2026') {
         countQuery = countQuery.or('academic_year.eq.2025/2026,academic_year.is.null')
@@ -206,7 +250,7 @@ export default function KoordinatorDashboard() {
       }
       const { count: studentTotal } = await countQuery
 
-      const overallProgress = allScores.length > 0 ? (totalFilledAll / allScores.length) * 100 : 0
+      const overallProgress = semesterFilteredScores.length > 0 ? (totalFilledAll / semesterFilteredScores.length) * 100 : 0
 
       setMonitoringStats(statsPerEkskul)
       setSummaryStats({
@@ -223,7 +267,7 @@ export default function KoordinatorDashboard() {
       setLoadingMonitoring(false)
       setSummaryStats(prev => ({ ...prev, loading: false }))
     }
-  }, [selectedYear])
+  }, [selectedYear, selectedSemester])
 
   useEffect(() => {
     fetchMonitoringData()
@@ -236,6 +280,7 @@ export default function KoordinatorDashboard() {
       const from = (page - 1) * pageSize
       const to = from + pageSize - 1
 
+      // Coba query lengkap dengan dukungan ekskul semester 2 (Opsi B)
       let query = supabase
         .from('students')
         .select(`
@@ -248,27 +293,26 @@ export default function KoordinatorDashboard() {
           pilihan1:extracurriculars!pilihan_1_id(id, name),
           pilihan2:extracurriculars!pilihan_2_id(id, name),
           pilihan3:extracurriculars!pilihan_3_id(id, name),
+          sem2_pilihan1:extracurriculars!sem2_pilihan_1_id(id, name),
+          sem2_pilihan2:extracurriculars!sem2_pilihan_2_id(id, name),
+          sem2_pilihan3:extracurriculars!sem2_pilihan_3_id(id, name),
           scores(*)
         `, { count: 'exact' })
 
-      // Filter Tahun Ajaran
       if (selectedYear === '2025/2026') {
         query = query.or('academic_year.eq.2025/2026,academic_year.is.null')
       } else {
         query = query.eq('academic_year', selectedYear)
       }
 
-      // Filter Kelas
       if (selectedClass !== 'Semua Kelas') {
         query = query.eq('class_name', selectedClass)
       }
 
-      // Filter Search Nama Siswa
       if (debouncedSearch.trim()) {
         query = query.ilike('name', `%${debouncedSearch.trim()}%`)
       }
 
-      // Sorting
       if (sortConfig.key === 'class_name') {
         query = query
           .order('class_name', { ascending: sortConfig.direction === 'asc' })
@@ -277,10 +321,44 @@ export default function KoordinatorDashboard() {
         query = query.order('name', { ascending: sortConfig.direction === 'asc' })
       }
 
-      // Range Pagination
       query = query.range(from, to)
 
-      const { data, count, error } = await query
+      let { data, count, error } = await query
+
+      // Fallback jika kolom sem2_pilihan belum dijalankan di database
+      if (error && error.message && error.message.includes('sem2_pilihan')) {
+        let fallbackQuery = supabase
+          .from('students')
+          .select(`
+            id,
+            name,
+            gender,
+            class_name,
+            academic_year,
+            wajib:extracurriculars!wajib_id(id, name),
+            pilihan1:extracurriculars!pilihan_1_id(id, name),
+            pilihan2:extracurriculars!pilihan_2_id(id, name),
+            pilihan3:extracurriculars!pilihan_3_id(id, name),
+            scores(*)
+          `, { count: 'exact' })
+
+        if (selectedYear === '2025/2026') {
+          fallbackQuery = fallbackQuery.or('academic_year.eq.2025/2026,academic_year.is.null')
+        } else {
+          fallbackQuery = fallbackQuery.eq('academic_year', selectedYear)
+        }
+        if (selectedClass !== 'Semua Kelas') {
+          fallbackQuery = fallbackQuery.eq('class_name', selectedClass)
+        }
+        if (debouncedSearch.trim()) {
+          fallbackQuery = fallbackQuery.ilike('name', `%${debouncedSearch.trim()}%`)
+        }
+        fallbackQuery = fallbackQuery.range(from, to)
+        const res = await fallbackQuery
+        data = res.data
+        count = res.count
+        error = res.error
+      }
 
       if (error) throw error
 
@@ -292,7 +370,7 @@ export default function KoordinatorDashboard() {
     } finally {
       setLoadingRekap(false)
     }
-  }, [selectedYear, selectedClass, debouncedSearch, page, pageSize, sortConfig])
+  }, [selectedYear, selectedSemester, selectedClass, debouncedSearch, page, pageSize, sortConfig])
 
   useEffect(() => {
     if (activeView === 'rekap') {
@@ -307,6 +385,7 @@ export default function KoordinatorDashboard() {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         fetchMonitoringData()
+        fetchLockStatus()
         if (activeView === 'rekap') {
           fetchRekapData()
         }
@@ -325,17 +404,35 @@ export default function KoordinatorDashboard() {
         { event: '*', schema: 'public', table: 'students' },
         handleRealtimeChange
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'system_settings' },
+        handleRealtimeChange
+      )
       .subscribe()
 
     return () => {
       if (timer) clearTimeout(timer)
       supabase.removeChannel(channel)
     }
-  }, [fetchMonitoringData, fetchRekapData, activeView])
+  }, [fetchMonitoringData, fetchRekapData, fetchLockStatus, activeView])
 
+  // Resolusi pilihan ekskul siswa sesuai semester (Mendukung Opsi B: Boleh Ganti Ekskul di Sem. 2)
+  const getStudentEkskulPilihan = (student, index) => {
+    if (selectedSemester === '2') {
+      const sem2Ekskul = student[`sem2_pilihan${index}`]
+      if (sem2Ekskul && sem2Ekskul.id) return sem2Ekskul
+    }
+    return student[`pilihan${index}`]
+  }
+
+  // Ambil baris score yang sesuai dengan ekskul dan semester aktif
   const getScoreForEkskul = (student, ekskulId) => {
     if (!ekskulId || !student.scores) return null
-    return student.scores.find(s => s.extracurricular_id === ekskulId)
+    return student.scores.find(s => 
+      s.extracurricular_id === ekskulId && 
+      (s.semester === undefined || s.semester === null || s.semester === Number(selectedSemester))
+    )
   }
 
   // Export Rekap Nilai ke Excel
@@ -353,6 +450,9 @@ export default function KoordinatorDashboard() {
           pilihan1:extracurriculars!pilihan_1_id(id, name),
           pilihan2:extracurriculars!pilihan_2_id(id, name),
           pilihan3:extracurriculars!pilihan_3_id(id, name),
+          sem2_pilihan1:extracurriculars!sem2_pilihan_1_id(id, name),
+          sem2_pilihan2:extracurriculars!sem2_pilihan_2_id(id, name),
+          sem2_pilihan3:extracurriculars!sem2_pilihan_3_id(id, name),
           scores(*)
         `)
 
@@ -378,36 +478,63 @@ export default function KoordinatorDashboard() {
         query = query.order('name', { ascending: sortConfig.direction === 'asc' })
       }
 
-      const { data: allStudents, error } = await query
+      let { data: allStudents, error } = await query
+
+      if (error && error.message && error.message.includes('sem2_pilihan')) {
+        let fallbackQuery = supabase
+          .from('students')
+          .select(`
+            name, gender, class_name, academic_year,
+            wajib:extracurriculars!wajib_id(id, name),
+            pilihan1:extracurriculars!pilihan_1_id(id, name),
+            pilihan2:extracurriculars!pilihan_2_id(id, name),
+            pilihan3:extracurriculars!pilihan_3_id(id, name),
+            scores(*)
+          `)
+        if (selectedYear === '2025/2026') fallbackQuery = fallbackQuery.or('academic_year.eq.2025/2026,academic_year.is.null')
+        else fallbackQuery = fallbackQuery.eq('academic_year', selectedYear)
+        if (selectedClass !== 'Semua Kelas') fallbackQuery = fallbackQuery.eq('class_name', selectedClass)
+        if (debouncedSearch.trim()) fallbackQuery = fallbackQuery.ilike('name', `%${debouncedSearch.trim()}%`)
+        const res = await fallbackQuery
+        allStudents = res.data
+        error = res.error
+      }
 
       if (error) throw error
 
-      const reportRows = (allStudents || []).map((s, idx) => ({
-        'No': idx + 1,
-        'Nama Lengkap Siswa': s.name,
-        'JK': s.gender || '-',
-        'Kelas': s.class_name,
-        'Tahun Ajaran': s.academic_year || selectedYear,
-        'Ekskul Wajib': s.wajib?.name || '-',
-        'Nilai Wajib': getGradeStr(getScoreForEkskul(s, s.wajib?.id)),
-        'Ekskul Pilihan 1': s.pilihan1?.name || '-',
-        'Nilai Pilihan 1': getGradeStr(getScoreForEkskul(s, s.pilihan1?.id)),
-        'Ekskul Pilihan 2': s.pilihan2?.name || '-',
-        'Nilai Pilihan 2': getGradeStr(getScoreForEkskul(s, s.pilihan2?.id)),
-        'Ekskul Pilihan 3': s.pilihan3?.name || '-',
-        'Nilai Pilihan 3': getGradeStr(getScoreForEkskul(s, s.pilihan3?.id)),
-      }))
+      const reportRows = (allStudents || []).map((s, idx) => {
+        const p1 = getStudentEkskulPilihan(s, 1)
+        const p2 = getStudentEkskulPilihan(s, 2)
+        const p3 = getStudentEkskulPilihan(s, 3)
+
+        return {
+          'No': idx + 1,
+          'Nama Lengkap Siswa': s.name,
+          'JK': s.gender || '-',
+          'Kelas': s.class_name,
+          'Tahun Ajaran': s.academic_year || selectedYear,
+          'Semester': `Semester ${selectedSemester}`,
+          'Ekskul Wajib': s.wajib?.name || '-',
+          'Nilai Wajib': getGradeStr(getScoreForEkskul(s, s.wajib?.id)),
+          'Ekskul Pilihan 1': p1?.name || '-',
+          'Nilai Pilihan 1': getGradeStr(getScoreForEkskul(s, p1?.id)),
+          'Ekskul Pilihan 2': p2?.name || '-',
+          'Nilai Pilihan 2': getGradeStr(getScoreForEkskul(s, p2?.id)),
+          'Ekskul Pilihan 3': p3?.name || '-',
+          'Nilai Pilihan 3': getGradeStr(getScoreForEkskul(s, p3?.id)),
+        }
+      })
 
       const ws = XLSX.utils.json_to_sheet(reportRows)
       const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, "Rekap Nilai Siswa")
+      XLSX.utils.book_append_sheet(wb, ws, `Rekap Nilai Sem ${selectedSemester}`)
       
       const safeYear = selectedYear.replace('/', '-')
       const safeClass = selectedClass.replace(' ', '_')
       const fileName = `Rekap_Nilai_${safeClass}_TA_${safeYear}_Sem_${selectedSemester}.xlsx`
       
       XLSX.writeFile(wb, fileName)
-      toast.success(`Berhasil mengekspor ${reportRows.length} data siswa`)
+      toast.success(`Berhasil mengekspor ${reportRows.length} data siswa (Sem. ${selectedSemester})`)
     } catch (err) {
       console.error('Error exporting rekap:', err)
       toast.error('Gagal mengekspor data: ' + err.message)
@@ -459,7 +586,7 @@ export default function KoordinatorDashboard() {
         <div className="absolute right-40 -top-20 w-44 h-44 bg-blue-400/20 rounded-full blur-2xl pointer-events-none" />
       </div>
 
-      {/* Filter Utama: Dropdown Tahun Ajaran & Semester Filter (Revisi Poin 1) */}
+      {/* Filter Utama: Dropdown Tahun Ajaran, Semester Filter, & Kunci Nilai */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           {/* Dropdown Tahun Ajaran */}
@@ -473,8 +600,8 @@ export default function KoordinatorDashboard() {
               onChange={(e) => handleYearChange(e.target.value)}
               className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
             >
-              <option value="2026/2027">2026/2027 (Baru)</option>
-              <option value="2025/2026">2025/2026 (Lama)</option>
+              <option value="2026/2027">2026/2027</option>
+              <option value="2025/2026">2025/2026</option>
               <option value="2027/2028">2027/2028</option>
             </select>
           </div>
@@ -483,13 +610,14 @@ export default function KoordinatorDashboard() {
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
             <button
               onClick={() => handleSemesterChange('1')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 selectedSemester === '1'
                   ? 'bg-primary-600 text-white shadow-sm font-extrabold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Semester 1 (Ganjil)
+              <span>Semester 1 (Ganjil)</span>
+              {isSemester1Locked && <Lock size={12} className={selectedSemester === '1' ? 'text-white' : 'text-amber-600'} />}
             </button>
             <button
               onClick={() => handleSemesterChange('2')}
@@ -504,9 +632,20 @@ export default function KoordinatorDashboard() {
           </div>
         </div>
 
-        <div className="text-xs font-bold text-slate-500 flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Status Sistem: Aktif • T.A. {selectedYear}</span>
+        {/* Tombol Kunci Nilai Semester 1 */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleToggleLockSemester1}
+            className={`btn flex items-center gap-1.5 text-xs font-bold py-2 px-3.5 rounded-xl transition-all shadow-sm ${
+              isSemester1Locked 
+                ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200' 
+                : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90'
+            }`}
+            title={isSemester1Locked ? 'Klik untuk membuka kunci Semester 1' : 'Klik untuk mengunci nilai Semester 1'}
+          >
+            {isSemester1Locked ? <Lock size={15} /> : <Unlock size={15} />}
+            <span>{isSemester1Locked ? 'Nilai Sem. 1 Terkunci' : 'Kunci Nilai Sem. 1'}</span>
+          </button>
         </div>
       </div>
 
@@ -535,7 +674,7 @@ export default function KoordinatorDashboard() {
               <span className="text-xs font-bold text-slate-400 ml-1">/ {summaryStats.totalEkskuls}</span>
             </p>
             <span className="text-[10px] sm:text-[11px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md mt-1.5 inline-block">
-              100% Dinilai
+              Sem. {selectedSemester} Selesai
             </span>
           </div>
           <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shrink-0">
@@ -550,7 +689,7 @@ export default function KoordinatorDashboard() {
               {summaryStats.loading ? '...' : `${summaryStats.avgProgress}%`}
             </p>
             <span className="text-[10px] sm:text-[11px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-md mt-1.5 inline-block">
-              Seluruh Ekskul
+              Sem. {selectedSemester}
             </span>
           </div>
           <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0">
@@ -574,7 +713,7 @@ export default function KoordinatorDashboard() {
         </div>
       </div>
 
-      {/* Main Navigation Card Buttons (Revisi Poin 4: Menu Monitoring & Rekap di Dashboard) */}
+      {/* Main Navigation Card Buttons */}
       <div>
         <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight mb-3">
           Akses Cepat Menu Koordinator
@@ -612,7 +751,7 @@ export default function KoordinatorDashboard() {
               </div>
 
               <h3 className="text-base sm:text-lg font-bold text-slate-800 group-hover:text-primary-600 transition-colors">
-                Monitoring Nilai Ekskul
+                Monitoring Nilai Ekskul (Sem. {selectedSemester})
               </h3>
               <p className="text-slate-500 text-xs mt-1.5 leading-relaxed">
                 Pantau status pengisian nilai presensi, praktik, dan pengetahuan dari 23 ekstrakurikuler secara real-time.
@@ -659,7 +798,7 @@ export default function KoordinatorDashboard() {
               </div>
 
               <h3 className="text-base sm:text-lg font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
-                Rekap Nilai Siswa
+                Rekap Nilai Siswa (Sem. {selectedSemester})
               </h3>
               <p className="text-slate-500 text-xs mt-1.5 leading-relaxed">
                 Akses laporan lengkap nilai ekskul wajib dan pilihan siswa per kelas, dilengkapi fitur filter dan ekspor Excel.
@@ -676,7 +815,7 @@ export default function KoordinatorDashboard() {
         </div>
       </div>
 
-      {/* Content Area (Anchor for smooth scroll) */}
+      {/* Content Area */}
       <div id="koordinator-content-area" className="pt-2">
         {/* VIEW 1: MONITORING PROGRES EKSKUL */}
         {activeView === 'monitoring' && (
@@ -712,7 +851,7 @@ export default function KoordinatorDashboard() {
             {loadingMonitoring ? (
               <div className="p-16 text-center text-slate-400 flex flex-col items-center gap-3 bg-white rounded-2xl border border-slate-200/80">
                 <Loader2 className="animate-spin text-primary-600" size={32} />
-                <p className="text-xs font-medium">Memuat progres ekstrakurikuler...</p>
+                <p className="text-xs font-medium">Memuat progres ekstrakurikuler (Sem. {selectedSemester})...</p>
               </div>
             ) : filteredMonitoringStats.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -791,7 +930,7 @@ export default function KoordinatorDashboard() {
           </div>
         )}
 
-        {/* VIEW 2: REKAPITULASI NILAI SISWA (SERVER-SIDE PAGINATION: 10, 20, 50) */}
+        {/* VIEW 2: REKAPITULASI NILAI SISWA */}
         {activeView === 'rekap' && (
           <div className="space-y-4">
             {/* Control Bar: Class Filter, Search, Rows per page & Export */}
@@ -833,7 +972,7 @@ export default function KoordinatorDashboard() {
               </div>
 
               <div className="flex items-center justify-between sm:justify-end gap-3 text-xs">
-                {/* Rows per page (10, 20, 50 - Revisi Tambahan) */}
+                {/* Rows per page */}
                 <div className="flex items-center gap-1.5 text-slate-500">
                   <span>Tampilkan:</span>
                   <select
@@ -863,12 +1002,12 @@ export default function KoordinatorDashboard() {
               </div>
             </div>
 
-            {/* Compact Rekap Table (Ringkas tanpa scroll horizontal berlebih) */}
+            {/* Compact Rekap Table */}
             <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
               {loadingRekap ? (
                 <div className="p-16 text-center text-slate-400 flex flex-col items-center gap-3">
                   <Loader2 className="animate-spin text-primary-600" size={32} />
-                  <p className="text-xs font-medium">Memuat data rekapitulasi nilai...</p>
+                  <p className="text-xs font-medium">Memuat data rekapitulasi nilai (Sem. {selectedSemester})...</p>
                 </div>
               ) : studentsData.length > 0 ? (
                 <>
@@ -897,10 +1036,14 @@ export default function KoordinatorDashboard() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {studentsData.map((student, idx) => {
+                          const p1 = getStudentEkskulPilihan(student, 1)
+                          const p2 = getStudentEkskulPilihan(student, 2)
+                          const p3 = getStudentEkskulPilihan(student, 3)
+
                           const sWajib = getScoreForEkskul(student, student.wajib?.id)
-                          const sP1 = getScoreForEkskul(student, student.pilihan1?.id)
-                          const sP2 = getScoreForEkskul(student, student.pilihan2?.id)
-                          const sP3 = getScoreForEkskul(student, student.pilihan3?.id)
+                          const sP1 = getScoreForEkskul(student, p1?.id)
+                          const sP2 = getScoreForEkskul(student, p2?.id)
+                          const sP3 = getScoreForEkskul(student, p3?.id)
 
                           const gWajib = getGradeStr(sWajib)
                           const gP1 = getGradeStr(sP1)
@@ -941,8 +1084,8 @@ export default function KoordinatorDashboard() {
                               {/* Pilihan 1 */}
                               <td className="py-2 px-2">
                                 <div className="flex items-center justify-between gap-1">
-                                  <span className="truncate max-w-[120px] text-slate-700 font-medium" title={student.pilihan1?.name}>
-                                    {student.pilihan1?.name || '-'}
+                                  <span className="truncate max-w-[120px] text-slate-700 font-medium" title={p1?.name}>
+                                    {p1?.name || '-'}
                                   </span>
                                   {gP1 !== '-' ? (
                                     <span className={`w-5 h-5 rounded flex items-center justify-center font-black text-[10px] shrink-0 ${
@@ -960,8 +1103,8 @@ export default function KoordinatorDashboard() {
                               {/* Pilihan 2 */}
                               <td className="py-2 px-2">
                                 <div className="flex items-center justify-between gap-1">
-                                  <span className="truncate max-w-[120px] text-slate-700 font-medium" title={student.pilihan2?.name}>
-                                    {student.pilihan2?.name || '-'}
+                                  <span className="truncate max-w-[120px] text-slate-700 font-medium" title={p2?.name}>
+                                    {p2?.name || '-'}
                                   </span>
                                   {gP2 !== '-' ? (
                                     <span className={`w-5 h-5 rounded flex items-center justify-center font-black text-[10px] shrink-0 ${
@@ -979,8 +1122,8 @@ export default function KoordinatorDashboard() {
                               {/* Pilihan 3 */}
                               <td className="py-2 px-2">
                                 <div className="flex items-center justify-between gap-1">
-                                  <span className="truncate max-w-[120px] text-slate-700 font-medium" title={student.pilihan3?.name}>
-                                    {student.pilihan3?.name || '-'}
+                                  <span className="truncate max-w-[120px] text-slate-700 font-medium" title={p3?.name}>
+                                    {p3?.name || '-'}
                                   </span>
                                   {gP3 !== '-' ? (
                                     <span className={`w-5 h-5 rounded flex items-center justify-center font-black text-[10px] shrink-0 ${
@@ -1004,7 +1147,7 @@ export default function KoordinatorDashboard() {
                   {/* Server-side Pagination Controls */}
                   <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
                     <div>
-                      Menampilkan <strong className="text-slate-800">{(page - 1) * pageSize + 1}</strong> - <strong className="text-slate-800">{Math.min(page * pageSize, totalStudentsCount)}</strong> dari <strong className="text-slate-800">{totalStudentsCount}</strong> siswa ({selectedClass} • T.A. {selectedYear})
+                      Menampilkan <strong className="text-slate-800">{(page - 1) * pageSize + 1}</strong> - <strong className="text-slate-800">{Math.min(page * pageSize, totalStudentsCount)}</strong> dari <strong className="text-slate-800">{totalStudentsCount}</strong> siswa ({selectedClass} • T.A. {selectedYear} • Sem. {selectedSemester})
                     </div>
 
                     <div className="flex items-center gap-1">

@@ -213,8 +213,8 @@ export default function AdminDashboard() {
             onChange={(e) => setSelectedYear(e.target.value)}
             className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[140px]"
           >
-            <option value="2026/2027">2026/2027 (Baru)</option>
-            <option value="2025/2026">2025/2026 (Lama)</option>
+            <option value="2026/2027">2026/2027</option>
+            <option value="2025/2026">2025/2026</option>
             <option value="2027/2028">2027/2028</option>
           </select>
         </div>

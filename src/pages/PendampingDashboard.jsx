@@ -105,7 +105,7 @@ export default function PendampingDashboard() {
       while (hasMore) {
         let query = supabase
           .from('scores')
-          .select('extracurricular_id, average_score, att_1, student:students!inner(academic_year)')
+          .select('extracurricular_id, semester, average_score, att_1, student:students!inner(academic_year)')
           .range(p * batchSize, (p + 1) * batchSize - 1)
 
         if (selectedYear === '2025/2026') {
@@ -121,12 +121,17 @@ export default function PendampingDashboard() {
         p++
       }
 
+      // Filter scores sesuai semester yang dipilih
+      const semesterFilteredScores = allScores.filter(s => 
+        s.semester === undefined || s.semester === null || s.semester === Number(selectedSemester)
+      )
+
       // Hitung agregasi per ekskul
       let totalFilled = 0
-      let totalAll = allScores.length
+      let totalAll = semesterFilteredScores.length
 
       const calculated = ekskuls.map(e => {
-        const scoresThisEkskul = allScores.filter(s => s.extracurricular_id === e.id)
+        const scoresThisEkskul = semesterFilteredScores.filter(s => s.extracurricular_id === e.id)
         const total = scoresThisEkskul.length
         const filled = scoresThisEkskul.filter(s => s.att_1 || s.average_score > 0).length
         totalFilled += filled
@@ -197,6 +202,9 @@ export default function PendampingDashboard() {
         query = query.eq('student.academic_year', selectedYear)
       }
 
+      // Filter Semester jika kolom tersedia
+      query = query.eq('semester', Number(selectedSemester))
+
       // Filter Ekstrakurikuler jika dipilih spesifik
       if (selectedEkskulFilter !== 'all') {
         query = query.eq('extracurricular_id', selectedEkskulFilter)
@@ -221,7 +229,51 @@ export default function PendampingDashboard() {
       // Range Pagination
       query = query.range(from, to)
 
-      const { data, count, error } = await query
+      let { data, count, error } = await query
+
+      // Fallback jika kolom semester belum ada di database
+      if (error && error.message && error.message.includes('semester')) {
+        let fallbackQuery = supabase
+          .from('scores')
+          .select(`
+            id,
+            att_1, att_2, att_3, att_4, att_5, att_6,
+            att_7, att_8, att_9, att_10, att_11, att_12,
+            prac_1, prac_2, prac_3, prac_4, prac_5,
+            know_1, know_2, know_3,
+            average_score,
+            updated_at,
+            extracurricular_id,
+            student:students!inner(
+              id,
+              name,
+              gender,
+              class_name,
+              academic_year
+            ),
+            extracurricular:extracurriculars(
+              id,
+              name
+            )
+          `, { count: 'exact' })
+
+        if (selectedYear === '2025/2026') {
+          fallbackQuery = fallbackQuery.or('academic_year.eq.2025/2026,academic_year.is.null', { foreignTable: 'students' })
+        } else {
+          fallbackQuery = fallbackQuery.eq('student.academic_year', selectedYear)
+        }
+        if (selectedEkskulFilter !== 'all') {
+          fallbackQuery = fallbackQuery.eq('extracurricular_id', selectedEkskulFilter)
+        }
+        if (debouncedSearch.trim()) {
+          fallbackQuery = fallbackQuery.ilike('student.name', `%${debouncedSearch.trim()}%`)
+        }
+        fallbackQuery = fallbackQuery.range(from, to)
+        const res = await fallbackQuery
+        data = res.data
+        count = res.count
+        error = res.error
+      }
 
       if (error) throw error
 
@@ -233,7 +285,7 @@ export default function PendampingDashboard() {
     } finally {
       setLoadingTable(false)
     }
-  }, [selectedYear, selectedEkskulFilter, page, pageSize, debouncedSearch, sortConfig])
+  }, [selectedYear, selectedSemester, selectedEkskulFilter, page, pageSize, debouncedSearch, sortConfig])
 
   useEffect(() => {
     fetchStudentsScoresTable()
@@ -315,8 +367,8 @@ export default function PendampingDashboard() {
             onChange={(e) => handleYearChange(e.target.value)}
             className="input-field py-1.5 px-3 text-xs font-bold text-slate-800 bg-slate-50 w-auto min-w-[140px]"
           >
-            <option value="2026/2027">2026/2027 (Baru)</option>
-            <option value="2025/2026">2025/2026 (Lama)</option>
+            <option value="2026/2027">2026/2027</option>
+            <option value="2025/2026">2025/2026</option>
             <option value="2027/2028">2027/2028</option>
           </select>
         </div>
